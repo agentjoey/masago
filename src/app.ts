@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { InputFile } from 'grammy';
+import { createAnthropicClient, createMinimalTutor } from './agent/index.js';
 import { config } from './config/index.js';
 import { closeDb, db, telegramUpdatesRepo } from './db/index.js';
 import { createLogger } from './observability/index.js';
@@ -44,23 +45,19 @@ process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
 const { stt, tts } = createSpeechProviders(config);
 
-const tutorNotImplemented: Tutor = {
-  name: config.llm.provider,
+const tutor: Tutor = createMinimalTutor({
+  client: createAnthropicClient({ apiKey: config.llm.apiKey }),
   model: config.llm.model,
-  respond: () =>
-    Promise.reject(
-      new Error(
-        'tutor is not wired yet: the LLM provider adapter is pending a later task package',
-      ),
-    ),
-};
+  provider: config.llm.provider,
+  promptCacheEnabled: config.llm.promptCacheEnabled,
+});
 
 const usageRecorder = createRecorder({ executor: db, logger });
 
 const voice: OrchestratorVoiceDeps = {
   stt,
   tts,
-  tutor: tutorNotImplemented,
+  tutor,
   createDownloader: (api, meta) =>
     createVoiceDownloader(
       {
@@ -109,6 +106,9 @@ function keyFormatWarnings(): string[] {
   }
   if (config.tts.minimaxApiKey.trim().length < 20) {
     warnings.push('MINIMAX_API_KEY looks too short to be valid');
+  }
+  if (!config.llm.apiKey.startsWith('sk-ant-')) {
+    warnings.push('LLM_API_KEY does not match the expected sk-ant- format');
   }
   return warnings;
 }

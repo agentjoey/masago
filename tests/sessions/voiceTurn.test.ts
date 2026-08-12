@@ -2,6 +2,7 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import { createMinimalTutor } from '../../src/agent/index.js';
 import type { Turn } from '../../src/db/schema/session.js';
 import type { Logger } from '../../src/observability/index.js';
 import { MockSttProvider } from '../../src/speech/stt/mock.js';
@@ -24,6 +25,7 @@ import {
 import type { TurnStatus } from '../../src/sessions/turnStateMachine.js';
 import { createVoiceDownloader } from '../../src/telegram/voice.js';
 import type { UsageRecordInput } from '../../src/usage/types.js';
+import { makeTextMessage, StubAnthropicClient } from '../agent/stubAnthropic.js';
 
 const RAW_TRANSCRIPT = '昨日友達と映画を見るました';
 const NORMALIZED_TRANSCRIPT = '昨日、友達と映画を見ました';
@@ -231,6 +233,7 @@ describe('voiceTurn pipeline', () => {
   async function run(
     store: FakeTurnStore,
     services: VoiceTurnServices,
+    extra: { durationSeconds?: number } = {},
   ): Promise<unknown> {
     return runVoiceTurn({
       store,
@@ -239,6 +242,7 @@ describe('voiceTurn pipeline', () => {
       logger,
       recordUsage: services.recordUsage,
       workspaceOptions: { baseDir },
+      durationSeconds: extra.durationSeconds,
     }).catch((error: unknown) => error);
   }
 
@@ -457,6 +461,144 @@ describe('voiceTurn pipeline', () => {
     const serialized = JSON.stringify(logger.records);
     expect(serialized).not.toContain(token);
     expect((error as Error).message).not.toContain(token);
+    expect(await readdir(baseDir)).toEqual([]);
+  });
+
+  it('passes telegram durationSeconds to STT and reports it as audioInputSeconds (regression: was always 0)', async () => {
+    const store = new FakeTurnStore(makeTurn());
+    const { services, spies } = buildPipeline({ ttsOutputDir });
+
+    const result = await run(store, services, { durationSeconds: 12 });
+
+    expect(result).not.toBeInstanceOf(Error);
+    expect(spies.transcribe).toHaveBeenCalledTimes(1);
+    const sttOptions = spies.transcribe.mock.calls[0]?.[1];
+    expect(sttOptions?.durationSeconds).toBe(12);
+
+    const sttUsage = spies.recordUsage.mock.calls
+      .map((call) => call[0] as UsageRecordInput)
+      .find((usage) => usage.operation === 'stt');
+    expect(sttUsage?.audioInputSeconds).toBe(12);
+  });
+
+  it('writes telegram_file_id at AUDIO_READY, even when the download then fails', async () => {
+    const store = new FakeTurnStore(makeTurn());
+    const { services } = buildPipeline({ ttsOutputDir });
+    const persistFileId = vi.fn(async () => {});
+    services.persistTelegramFileId = persistFileId;
+
+    const result = await run(store, services);
+
+    expect(result).not.toBeInstanceOf(Error);
+    expect(persistFileId).toHaveBeenCalledTimes(1);
+    expect(persistFileId).toHaveBeenCalledWith('turn-voice-1', 'telegram-file-id');
+
+    const failingStore = new FakeTurnStore(makeTurn());
+    const failing = buildPipeline({
+      ttsOutputDir,
+      downloader: {
+        download: () => Promise.reject(new Error('download boom')),
+      },
+    });
+    const persistOnFailure = vi.fn(async () => {});
+    failing.services.persistTelegramFileId = persistOnFailure;
+
+    const error = await run(failingStore, failing.services);
+
+    expect(error).toBeInstanceOf(TurnStepFailedError);
+    expect((error as TurnStepFailedError).failedAt).toBe('AUDIO_READY');
+    expect(persistOnFailure).toHaveBeenCalledTimes(1);
+    expect(persistOnFailure).toHaveBeenCalledWith(
+      'turn-voice-1',
+      'telegram-file-id',
+    );
+    expect(await readdir(baseDir)).toEqual([]);
+  });
+
+  it('maps tutor cache token usage into the llm usage record', async () => {
+    const store = new FakeTurnStore(makeTurn());
+    const { services, spies } = buildPipeline({ ttsOutputDir });
+    spies.respond.mockImplementation(async () => ({
+      replyText: TUTOR_REPLY,
+      provider: 'anthropic',
+      model: 'claude-sonnet-5',
+      usage: {
+        inputTokens: 1200,
+        outputTokens: 80,
+        cacheReadTokens: 1024,
+        cacheWriteTokens: 176,
+        requestId: 'msg_xyz',
+      },
+    }));
+
+    const result = await run(store, services);
+
+    expect(result).not.toBeInstanceOf(Error);
+    const llmUsage = spies.recordUsage.mock.calls
+      .map((call) => call[0] as UsageRecordInput)
+      .find((usage) => usage.operation === 'llm');
+    expect(llmUsage).toMatchObject({
+      provider: 'anthropic',
+      model: 'claude-sonnet-5',
+      inputTokens: 1200,
+      outputTokens: 80,
+      cacheReadTokens: 1024,
+      cacheWriteTokens: 176,
+      success: true,
+      requestId: 'msg_xyz',
+    });
+  });
+
+  it('runs a full voice turn to COMPLETED with the real tutor and a stubbed Anthropic client', async () => {
+    const validOutput = JSON.stringify({
+      reply: { japanese: TUTOR_REPLY, translation: null },
+      detectedIssues: [],
+      session: { continue: true },
+    });
+    const anthropic = new StubAnthropicClient([
+      makeTextMessage(validOutput, {
+        id: 'msg_full_turn',
+        inputTokens: 1300,
+        outputTokens: 60,
+        cacheReadInputTokens: 1024,
+        cacheCreationInputTokens: 276,
+      }),
+    ]);
+    const tutor = createMinimalTutor({
+      client: anthropic,
+      model: 'claude-sonnet-5',
+    });
+    const store = new FakeTurnStore(makeTurn());
+    const { services, spies } = buildPipeline({ ttsOutputDir });
+    services.tutor = tutor;
+
+    const result = await run(store, services, { durationSeconds: 9 });
+
+    expect(result).not.toBeInstanceOf(Error);
+    const { turn } = result as Awaited<ReturnType<typeof runVoiceTurn>>;
+    expect(turn.status).toBe('COMPLETED');
+    expect(turn.replyText).toBe(TUTOR_REPLY);
+    expect(spies.sendText).toHaveBeenCalledWith(TUTOR_REPLY);
+    expect(spies.sendVoice).toHaveBeenCalledTimes(1);
+
+    const params = anthropic.calls[0];
+    expect(params?.model).toBe('claude-sonnet-5');
+    expect(params).not.toHaveProperty('temperature');
+    expect(params?.output_config?.format?.type).toBe('json_schema');
+
+    const llmUsage = spies.recordUsage.mock.calls
+      .map((call) => call[0] as UsageRecordInput)
+      .find((usage) => usage.operation === 'llm');
+    expect(llmUsage).toMatchObject({
+      provider: 'anthropic',
+      cacheReadTokens: 1024,
+      cacheWriteTokens: 276,
+      success: true,
+    });
+    const sttUsage = spies.recordUsage.mock.calls
+      .map((call) => call[0] as UsageRecordInput)
+      .find((usage) => usage.operation === 'stt');
+    expect(sttUsage?.audioInputSeconds).toBe(9);
     expect(await readdir(baseDir)).toEqual([]);
   });
 });

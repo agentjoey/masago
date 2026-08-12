@@ -47,6 +47,8 @@ export interface TutorRequest {
 export interface TutorUsage {
   inputTokens?: number;
   outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   requestId?: string;
 }
 
@@ -78,6 +80,7 @@ export interface VoiceTurnServices {
   sendText(text: string): Promise<void>;
   sendVoice(audio: OutboundVoice): Promise<void>;
   persist?(ctx: VoiceTurnContext): Promise<void>;
+  persistTelegramFileId?(turnId: string, fileId: string): Promise<void>;
   normalizeAudio?: NormalizeAudioFn;
   normalizeTranscript?(rawText: string): Promise<string>;
   recordUsage?(usage: UsageRecordInput): Promise<void>;
@@ -87,6 +90,7 @@ export interface VoiceTurnContext {
   turn: Turn;
   fileId: string;
   workspace: Workspace;
+  durationSeconds?: number;
   audio?: AudioFileRef & { bytes?: number };
   sttAudio?: AudioFileRef;
   rawTranscript?: string;
@@ -146,6 +150,7 @@ export function buildVoiceTurnSteps(
     {
       status: 'AUDIO_READY',
       async execute(ctx) {
+        await services.persistTelegramFileId?.(ctx.turn.id, ctx.fileId);
         const destPath = ctx.workspace.path('input.oga');
         const result = await services.downloader.download(ctx.fileId, destPath);
         ctx.audio = {
@@ -178,6 +183,7 @@ export function buildVoiceTurnSteps(
         try {
           transcript = await services.stt.transcribe(ctx.sttAudio, {
             language: 'ja',
+            durationSeconds: ctx.durationSeconds,
           });
         } catch (cause) {
           await recordFailedCall(services, 'stt', services.stt, cause);
@@ -196,7 +202,8 @@ export function buildVoiceTurnSteps(
             provider: transcript.provider,
             model: transcript.model,
             operation: 'stt',
-            audioInputSeconds: transcript.usage.audioSeconds,
+            audioInputSeconds:
+              ctx.durationSeconds ?? transcript.usage.audioSeconds,
             success: true,
             requestId: transcript.usage.requestId,
           },
@@ -234,6 +241,8 @@ export function buildVoiceTurnSteps(
             operation: 'llm',
             inputTokens: response.usage.inputTokens,
             outputTokens: response.usage.outputTokens,
+            cacheReadTokens: response.usage.cacheReadTokens,
+            cacheWriteTokens: response.usage.cacheWriteTokens,
             success: true,
             requestId: response.usage.requestId,
           },
@@ -309,6 +318,7 @@ export interface RunVoiceTurnDeps {
   logger: Logger;
   recordUsage?(usage: UsageRecordInput): Promise<void>;
   workspaceOptions?: TempFileOptions;
+  durationSeconds?: number;
 }
 
 export interface VoiceTurnResult {
@@ -334,6 +344,7 @@ export async function runVoiceTurn(
         turn: loaded,
         fileId: deps.fileId,
         workspace,
+        durationSeconds: deps.durationSeconds,
         rawTranscript: loaded.rawTranscript ?? undefined,
         normalizedTranscript: loaded.normalizedTranscript ?? undefined,
         replyText: loaded.replyText ?? undefined,

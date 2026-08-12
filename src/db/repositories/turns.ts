@@ -32,6 +32,17 @@ export async function updateStatus(
   return row;
 }
 
+export async function setTelegramFileId(
+  tx: Executor,
+  turnId: string,
+  telegramFileId: string,
+): Promise<void> {
+  await tx
+    .update(turns)
+    .set({ telegramFileId, updatedAt: sql`now()` })
+    .where(eq(turns.id, turnId));
+}
+
 export async function findById(
   tx: Executor,
   turnId: string,

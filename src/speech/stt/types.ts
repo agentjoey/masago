@@ -25,6 +25,7 @@ export interface Transcript {
 export interface SttOptions {
   language?: string;
   timeoutMs?: number;
+  durationSeconds?: number;
 }
 
 export interface SpeechToTextProvider {

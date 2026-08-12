@@ -165,6 +165,8 @@ async function handleVoiceMessage(
     normalizeTranscript: voice.normalizeTranscript,
     recordUsage: voice.recordUsage,
     persist: () => touchSessionInTransaction(executor, sessionId),
+    persistTelegramFileId: (turnId, fileId) =>
+      turnsRepo.setTelegramFileId(executor, turnId, fileId),
   };
 
   try {
@@ -178,6 +180,7 @@ async function handleVoiceMessage(
       logger,
       recordUsage: voice.recordUsage,
       workspaceOptions: voice.workspaceOptions,
+      durationSeconds: input.durationSeconds,
     });
     return {
       reply: result.replyText ?? '',

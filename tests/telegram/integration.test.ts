@@ -226,23 +226,108 @@ describe.skipIf(!HAS_DB)('telegram W3 integration (real database)', () => {
     expect(apiCalls).toHaveLength(0);
   }, 30_000);
 
-  it('replies that voice is not enabled without downloading audio or calling STT', async (t) => {
+  it('runs a voice update through the voice pipeline with mocked providers', async (t) => {
     if (!dbReachable) t.skip();
-    const { config } = need();
-    const { bot, apiCalls } = makeBot();
-    const updateId = uniqueId(7);
-    trackedUpdateIds.push(updateId);
+    const { db, schema, config } = need();
+    const { MockSttProvider } = await import('../../src/speech/stt/mock.js');
+    const { MockTtsProvider } = await import('../../src/speech/tts/mock.js');
+    const { mkdtemp, rm, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
 
-    await bot.handleUpdate(
-      helpers.voiceUpdate({
-        updateId,
-        userId: config.telegram.allowedUserId,
-        messageId: uniqueId(8),
-      }),
-    );
+    const ttsOutputDir = await mkdtemp(join(tmpdir(), 'jp-coach-it-tts-'));
+    const workspaceBase = await mkdtemp(join(tmpdir(), 'jp-coach-it-ws-'));
+    try {
+      const logger = helpers.fakeLogger();
+      const stt = new MockSttProvider({ transcript: '昨日友達と映画を見るました' });
+      const tts = new MockTtsProvider({ outputDir: ttsOutputDir });
+      const tutorReply = '映画を見ましたね！';
+      const handleUpdate = need().createHandleUpdate({
+        config,
+        executor: db,
+        logger,
+        voice: {
+          stt,
+          tts,
+          tutor: {
+            name: 'mock-llm',
+            model: 'mock-tutor-1',
+            respond: () =>
+              Promise.resolve({
+                replyText: tutorReply,
+                provider: 'mock-llm',
+                model: 'mock-tutor-1',
+                usage: { inputTokens: 5, outputTokens: 5 },
+              }),
+          },
+          normalizeAudio: (input) =>
+            Promise.resolve({
+              path: input.path,
+              container: 'webm',
+              codec: 'opus',
+              transcoded: false,
+            }),
+          normalizeTranscript: (raw) =>
+            Promise.resolve(raw.replace('見るました', '見ました')),
+          createDownloader: () => ({
+            async download(fileId, destPath) {
+              void fileId;
+              const bytes = Buffer.from('fake-ogg-opus');
+              await writeFile(destPath, bytes);
+              return { bytes: bytes.byteLength, container: 'ogg' };
+            },
+          }),
+          workspaceOptions: { baseDir: workspaceBase },
+        },
+      });
+      const bot = need().createBot({
+        config,
+        logger,
+        handleUpdate,
+        recordUpdate: async (updateId, payload) => {
+          const result = await need().telegramUpdatesRepo.insertIfAbsent(
+            db,
+            updateId,
+            payload,
+          );
+          return result.inserted;
+        },
+      });
+      const apiCalls = helpers.stubBotApi(bot);
 
-    expect(apiCalls.map((c) => c.method)).toEqual(['sendMessage']);
-    expect((apiCalls[0]?.payload as { text?: string }).text).toContain('语音功能尚未启用');
+      const updateId = uniqueId(7);
+      const messageId = uniqueId(8);
+      trackedUpdateIds.push(updateId);
+      await bot.handleUpdate(
+        helpers.voiceUpdate({
+          updateId,
+          userId: config.telegram.allowedUserId,
+          messageId,
+        }),
+      );
+
+      expect(apiCalls.map((c) => c.method)).toEqual(['sendMessage', 'sendVoice']);
+      expect((apiCalls[0]?.payload as { text?: string }).text).toBe(tutorReply);
+
+      const turns = await db
+        .select()
+        .from(schema.turns)
+        .where(eq(schema.turns.telegramMessageId, messageId));
+      expect(turns).toHaveLength(1);
+      expect(turns[0]?.status).toBe('COMPLETED');
+      expect(turns[0]?.rawTranscript).toBe('昨日友達と映画を見るました');
+      expect(turns[0]?.normalizedTranscript).toBe('昨日友達と映画を見ました');
+      expect(turns[0]?.replyText).toBe(tutorReply);
+
+      const learner = await db
+        .select()
+        .from(schema.sessions)
+        .where(eq(schema.sessions.id, turns[0]?.sessionId ?? ''));
+      for (const s of learner) trackedSessionIds.push(s.id);
+    } finally {
+      await rm(ttsOutputDir, { recursive: true, force: true });
+      await rm(workspaceBase, { recursive: true, force: true });
+    }
   }, 30_000);
 
   it('reuses the session within the idle window and opens a new one after it', async (t) => {

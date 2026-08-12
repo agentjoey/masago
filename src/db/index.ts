@@ -4,4 +4,5 @@ export * as telegramUpdatesRepo from './repositories/telegramUpdates.js';
 export * as learnerProfilesRepo from './repositories/learnerProfiles.js';
 export * as sessionsRepo from './repositories/sessions.js';
 export * as turnsRepo from './repositories/turns.js';
+export * as usageRecordsRepo from './repositories/usageRecords.js';
 export type { Executor } from './repositories/executor.js';

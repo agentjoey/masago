@@ -32,6 +32,18 @@ export async function updateStatus(
   return row;
 }
 
+export async function findById(
+  tx: Executor,
+  turnId: string,
+): Promise<Turn | undefined> {
+  const [row] = await tx
+    .select()
+    .from(turns)
+    .where(eq(turns.id, turnId))
+    .limit(1);
+  return row;
+}
+
 export async function findByTelegramMessageId(
   tx: Executor,
   telegramMessageId: number,

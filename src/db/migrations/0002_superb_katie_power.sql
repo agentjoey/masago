@@ -1,0 +1,1 @@
+ALTER TABLE "turns" ADD COLUMN "telegram_file_id" text;

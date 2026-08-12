@@ -15,6 +15,13 @@
       "when": 1786527164534,
       "tag": "0001_known_namorita",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786541993749,
+      "tag": "0002_superb_katie_power",
+      "breakpoints": true
     }
   ]
 }

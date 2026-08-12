@@ -60,6 +60,7 @@ function makeTurn(overrides: Partial<Turn> = {}): Turn {
     id: 'turn-voice-1',
     sessionId: 'session-1',
     telegramMessageId: 777,
+    telegramFileId: null,
     inputType: 'VOICE',
     status: 'RECEIVED',
     rawTranscript: null,

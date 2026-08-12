@@ -12,3 +12,14 @@ export {
   MOCK_STT_SUPPORTED_INPUT_FORMATS,
   MockSttProvider,
 } from './mock.js';
+export type {
+  OpenAiSttProviderOptions,
+  OpenAiTranscribeOptions,
+} from './openai.js';
+export {
+  OPENAI_STT_MAX_FILE_BYTES,
+  OPENAI_STT_SUPPORTED_INPUT_FORMATS,
+  OpenAiSttError,
+  OpenAiSttProvider,
+} from './openai.js';
+export { createSttProvider } from '../providerFactory.js';

@@ -47,6 +47,7 @@ export const turns = pgTable(
     telegramMessageId: bigint('telegram_message_id', { mode: 'number' })
       .notNull()
       .unique(),
+    telegramFileId: text('telegram_file_id'),
     inputType: turnInputType('input_type').notNull(),
     status: turnStatus('status').default('RECEIVED').notNull(),
     rawTranscript: text('raw_transcript'),

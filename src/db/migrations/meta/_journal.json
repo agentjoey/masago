@@ -8,6 +8,13 @@
       "when": 1786526653696,
       "tag": "0000_wandering_nuke",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786527164534,
+      "tag": "0001_known_namorita",
+      "breakpoints": true
     }
   ]
 }

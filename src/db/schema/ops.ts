@@ -69,7 +69,9 @@ export const outboxJobs = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [index('outbox_jobs_due_at_status_idx').on(table.dueAt, table.status)],
+  (table) => [
+    index('outbox_jobs_status_due_at_idx').on(table.status, table.dueAt),
+  ],
 );
 
 export type TelegramUpdate = typeof telegramUpdates.$inferSelect;

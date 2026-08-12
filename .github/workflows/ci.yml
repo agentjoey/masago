@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests (no database)
+        run: pnpm exec vitest run --exclude 'tests/db/**'
+
+      - name: Build
+        run: pnpm build
+
+      - name: Check for schema drift
+        env:
+          DATABASE_URL_DIRECT: postgres://ci:ci@localhost:5432/ci
+        run: |
+          pnpm db:generate
+          git diff --exit-code -- src/db/migrations

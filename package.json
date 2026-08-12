@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
+    "grammy": "^1.45.1",
     "pg": "^8.23.0",
     "pino": "^9.7.0",
     "zod": "^4.0.0"

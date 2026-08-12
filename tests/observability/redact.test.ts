@@ -60,6 +60,26 @@ describe('redact', () => {
     expect(output['count']).toBe(42);
   });
 
+  it('replaces values deeper than 32 levels with <max-depth>', () => {
+    let input: Record<string, unknown> = { leaf: 'bottom', secret: 'hidden' };
+    for (let i = 0; i < 40; i += 1) {
+      input = { level: i, child: input };
+    }
+    const serialized = JSON.stringify(redact(input));
+    expect(serialized).toContain('<max-depth>');
+    expect(serialized).not.toContain('bottom');
+    expect(serialized).not.toContain('hidden');
+  });
+
+  it('does not trigger max-depth for shallow structures', () => {
+    const input = { a: { b: { c: { d: 'ok' } } } };
+    const output = redact(input) as Record<string, unknown>;
+    const a = output['a'] as Record<string, unknown>;
+    const b = a['b'] as Record<string, unknown>;
+    const c = b['c'] as Record<string, unknown>;
+    expect(c['d']).toBe('ok');
+  });
+
   it('redacts custom sensitive properties on Error while keeping name and message readable', () => {
     const error = new Error('connection failed') as Error & {
       connectionString: string;

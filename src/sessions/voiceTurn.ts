@@ -1,3 +1,8 @@
+import type {
+  CorrectionTurnHooks,
+  NewPendingIssue,
+  SurfacingDirective,
+} from '../corrections/index.js';
 import type { Turn } from '../db/schema/session.js';
 import type { Logger } from '../observability/index.js';
 import type { NormalizedAudio } from '../speech/normalizer.js';
@@ -42,6 +47,12 @@ export interface OutboundVoice {
 export interface TutorRequest {
   rawTranscript: string;
   normalizedTranscript: string;
+  surfacingDirective?: SurfacingDirective;
+}
+
+export interface TutorRetryEvaluation {
+  succeeded: boolean;
+  feedback: string | null;
 }
 
 export interface TutorUsage {
@@ -55,6 +66,9 @@ export interface TutorUsage {
 export interface TutorResponse {
   replyText: string;
   ttsText?: string;
+  detectedIssues?: NewPendingIssue[];
+  correctionCard?: string | null;
+  retryEvaluation?: TutorRetryEvaluation | null;
   provider: string;
   model: string;
   usage: TutorUsage;
@@ -76,6 +90,7 @@ export interface VoiceTurnServices {
   stt: SpeechToTextProvider;
   tts: TextToSpeechProvider;
   tutor: Tutor;
+  corrections?: CorrectionTurnHooks;
   voice: VoiceConfig;
   sendText(text: string): Promise<void>;
   sendVoice(audio: OutboundVoice): Promise<void>;
@@ -97,6 +112,8 @@ export interface VoiceTurnContext {
   normalizedTranscript?: string;
   replyText?: string;
   ttsText?: string;
+  surfacingDirective?: SurfacingDirective;
+  correctionCard?: string | null;
 }
 
 export const VOICE_DOWNLOAD_FAILED_REPLY =
@@ -218,10 +235,26 @@ export function buildVoiceTurnSteps(
         }
         let response;
         try {
+          const directive = services.corrections
+            ? await services.corrections.prepareSurfacing({
+                turnId: ctx.turn.id,
+                sessionId: ctx.turn.sessionId,
+              })
+            : undefined;
+          ctx.surfacingDirective = directive;
           response = await services.tutor.respond({
             rawTranscript: ctx.rawTranscript,
             normalizedTranscript:
               ctx.normalizedTranscript ?? ctx.rawTranscript,
+            ...(directive !== undefined
+              ? { surfacingDirective: directive }
+              : {}),
+          });
+          await services.corrections?.finalizeSurfacing({
+            turnId: ctx.turn.id,
+            sessionId: ctx.turn.sessionId,
+            directive: directive ?? { action: 'HOLD' },
+            detectedIssues: response.detectedIssues ?? [],
           });
         } catch (cause) {
           await recordFailedCall(services, 'llm', {
@@ -232,6 +265,7 @@ export function buildVoiceTurnSteps(
         }
         ctx.replyText = response.replyText;
         ctx.ttsText = response.ttsText;
+        ctx.correctionCard = response.correctionCard ?? null;
         return {
           patch: { replyText: response.replyText },
           requestId: response.usage.requestId,
@@ -261,7 +295,10 @@ export function buildVoiceTurnSteps(
         if (ctx.replyText === undefined) {
           throw new Error('reply text missing from voice turn context');
         }
-        await services.sendText(ctx.replyText);
+        const text = ctx.correctionCard
+          ? `${ctx.replyText}\n\n${ctx.correctionCard}`
+          : ctx.replyText;
+        await services.sendText(text);
       },
     },
     {

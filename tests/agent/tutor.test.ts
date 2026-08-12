@@ -22,6 +22,8 @@ const VALID_OUTPUT = JSON.stringify({
       importance: 'HIGH',
     },
   ],
+  correctionCard: null,
+  retryEvaluation: null,
   session: { continue: true },
 });
 
@@ -105,7 +107,13 @@ describe('createMinimalTutor', () => {
     expect(params?.output_config?.format?.type).toBe('json_schema');
     expect(params?.output_config?.format?.schema).toMatchObject({
       type: 'object',
-      required: ['reply', 'detectedIssues', 'session'],
+      required: [
+        'reply',
+        'detectedIssues',
+        'correctionCard',
+        'retryEvaluation',
+        'session',
+      ],
     });
     expect(params).not.toHaveProperty('output_format');
   });

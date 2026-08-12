@@ -7,6 +7,8 @@ import {
 const MINIMAL_VALID = {
   reply: { japanese: 'そうなんですね！', translation: null },
   detectedIssues: [],
+  correctionCard: null,
+  retryEvaluation: null,
   session: { continue: true },
 };
 
@@ -55,7 +57,13 @@ describe('tutorOutputSchema', () => {
   it('json schema handed to the API mirrors the zod contract', () => {
     expect(TUTOR_OUTPUT_JSON_SCHEMA).toMatchObject({
       type: 'object',
-      required: ['reply', 'detectedIssues', 'session'],
+      required: [
+        'reply',
+        'detectedIssues',
+        'correctionCard',
+        'retryEvaluation',
+        'session',
+      ],
       additionalProperties: false,
     });
   });

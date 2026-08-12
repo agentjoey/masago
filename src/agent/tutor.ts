@@ -25,9 +25,12 @@ export const TUTOR_POLICY = `あなたは日本人学習者のための日本語
 - 学習者が英語や中国語を混ぜてきた場合でも、責めずに日本語の会話へ自然に戻してください。
 - 返答にローマ字は使わないでください。漢字には特別な指示がない限りふりがなを振らないでください。
 
-# 誤りの検出（このターンでは提示しない）
+# 誤りの検出と提示指示
 
-学習者の発話に文法・語彙・助詞・活用・自然さの問題を見つけた場合は、detectedIssues に記録してください。ただし、返答テキストの中でその誤りを指摘したり、訂正を促したりしてはいけません。指摘のタイミングは別のシステムが管理します。あなたの返答はあくまで自然な会話の継続です。
+学習者の発話に文法・語彙・助詞・活用・自然さの問題を見つけた場合は、毎ターン必ず detectedIssues に記録してください。提示のタイミングは別のシステム（Correction Scheduler）が管理し、ユーザーメッセージ内の <correction_directive> で毎ターン明示されます。
+
+- 指示が HOLD の場合：返答テキスト（reply.japanese）の中で誤りを指摘したり、訂正を促したり、推奨表現を示したりしてはいけません。検出した問題は detectedIssues にのみ記録し、correctionCard は必ず null にしてください。あなたの返答はあくまで自然な会話の継続です。
+- 指示が SURFACE の場合：指定された問題だけを correctionCard にレンダリングしてください。指定されていない問題は correctionCard に含めず、detectedIssues への記録は通常どおり行ってください。指示に言い直しの要求（requestRetry）が含まれる場合は、推奨表現でもう一度言ってもらうよう促してください。reply.japanese は通常どおり会話を続ける本文です。
 
 各 issue には次を含めてください：
 - original: 学習者が実際に言った問題の部分（原文のまま）
@@ -50,7 +53,9 @@ export const TUTOR_POLICY = `あなたは日本人学習者のための日本語
 
 - reply.japanese: 学習者への日本語の返答本文。音声合成でそのまま読み上げられるため、記号の羅列や絵文字、URL、箇条書きは使わないでください。
 - reply.translation: 通常は null です。学習者が明示的に意味を尋ねた場合のみ、中国語での簡潔な訳を入れてください。
-- detectedIssues: 上記の形式で検出した問題の配列。提示はしません。
+- detectedIssues: 上記の形式で検出した問題の配列。提示の有無にかかわらず毎ターン出力してください。
+- correctionCard: 提示指示が SURFACE の場合のみ、指定された問題を学習者向けに説明するテキスト（原句・推奨表現・理由を含む）。HOLD の場合は必ず null。
+- retryEvaluation: 前のターンで言い直しを求めた場合のみ、今回の発話が改善したかの判定。それ以外は null。
 - session.continue: 会話を続けられる状態であれば true。学習者が明確に会話を終わらせようとしている場合のみ false。
 
 # 話題の進め方
@@ -74,6 +79,34 @@ export const TUTOR_POLICY = `あなたは日本人学習者のための日本語
 
 export const REPAIR_INSTRUCTION =
   '直前の応答は指定された JSON schema を満たしていません。会話の内容は変えず、形式だけを修正して、schema に完全一致する JSON だけを出力してください。';
+
+export const HOLD_DIRECTIVE_TEXT =
+  '提示指示: HOLD。通常どおり会話を続けてください。検出した問題は detectedIssues にのみ記録し、reply.japanese の中で指摘・訂正・推奨表現の提示をしてはいけません。correctionCard は null にしてください。';
+
+export function buildSurfacingDirectiveText(
+  directive: NonNullable<TutorRequest['surfacingDirective']>,
+): string {
+  if (directive.action === 'HOLD') {
+    return HOLD_DIRECTIVE_TEXT;
+  }
+  const issues = directive.issues.map((issue) => ({
+    id: issue.id,
+    original: issue.original,
+    recommended: issue.recommended,
+    reason: issue.reason,
+    importance: issue.importance,
+  }));
+  const lines = [
+    '提示指示: SURFACE。次の問題だけを correctionCard にレンダリングしてください。reply.japanese は通常どおり会話を続ける本文にしてください。',
+    JSON.stringify(issues, null, 2),
+  ];
+  if (directive.requestRetry) {
+    lines.push(
+      'correctionCard の末尾で、推奨表現を使ってもう一度言ってもらうよう促してください。',
+    );
+  }
+  return lines.join('\n');
+}
 
 export class TutorError extends Error {
   constructor(message: string) {
@@ -134,12 +167,20 @@ function buildSystem(
 }
 
 function buildUserMessage(request: TutorRequest): string {
-  return [
+  const parts = [
     '<learner_input>',
     `<raw_transcript>${request.rawTranscript}</raw_transcript>`,
     `<normalized_transcript>${request.normalizedTranscript}</normalized_transcript>`,
     '</learner_input>',
-  ].join('\n');
+  ];
+  if (request.surfacingDirective !== undefined) {
+    parts.push(
+      '<correction_directive>',
+      buildSurfacingDirectiveText(request.surfacingDirective),
+      '</correction_directive>',
+    );
+  }
+  return parts.join('\n');
 }
 
 function parseOutput(text: string): TutorOutput | undefined {
@@ -253,9 +294,17 @@ export function createMinimalTutor(options: MinimalTutorOptions): Tutor {
         throw new TutorOutputError();
       }
 
+      const correctionCard =
+        request.surfacingDirective?.action === 'HOLD'
+          ? null
+          : attempt.output.correctionCard;
+
       return {
         replyText: attempt.output.reply.japanese,
         ttsText: attempt.output.reply.japanese,
+        detectedIssues: attempt.output.detectedIssues,
+        correctionCard,
+        retryEvaluation: attempt.output.retryEvaluation,
         provider,
         model: options.model,
         usage: sumUsage(responses),

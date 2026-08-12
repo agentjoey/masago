@@ -9,16 +9,24 @@ export const detectedIssueSchema = z.object({
   importance: z.enum(['LOW', 'MEDIUM', 'HIGH']),
 });
 
+export const retryEvaluationSchema = z.object({
+  succeeded: z.boolean(),
+  feedback: z.string().nullable(),
+});
+
 export const tutorOutputSchema = z.object({
   reply: z.object({
     japanese: z.string().min(1),
     translation: z.string().nullable(),
   }),
   detectedIssues: z.array(detectedIssueSchema),
+  correctionCard: z.string().nullable().default(null),
+  retryEvaluation: retryEvaluationSchema.nullable().default(null),
   session: z.object({ continue: z.boolean() }),
 });
 
 export type DetectedIssueOutput = z.infer<typeof detectedIssueSchema>;
+export type RetryEvaluationOutput = z.infer<typeof retryEvaluationSchema>;
 export type TutorOutput = z.infer<typeof tutorOutputSchema>;
 
 export const TUTOR_OUTPUT_JSON_SCHEMA: Record<string, unknown> = {
@@ -64,7 +72,23 @@ export const TUTOR_OUTPUT_JSON_SCHEMA: Record<string, unknown> = {
       required: ['continue'],
       additionalProperties: false,
     },
+    correctionCard: { type: ['string', 'null'] },
+    retryEvaluation: {
+      type: ['object', 'null'],
+      properties: {
+        succeeded: { type: 'boolean' },
+        feedback: { type: ['string', 'null'] },
+      },
+      required: ['succeeded', 'feedback'],
+      additionalProperties: false,
+    },
   },
-  required: ['reply', 'detectedIssues', 'session'],
+  required: [
+    'reply',
+    'detectedIssues',
+    'correctionCard',
+    'retryEvaluation',
+    'session',
+  ],
   additionalProperties: false,
 };

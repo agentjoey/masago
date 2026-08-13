@@ -7,6 +7,7 @@ import { closeDb, db, telegramUpdatesRepo } from './db/index.js';
 import { createKnowledgeKeyStore } from './db/repositories/knowledgeItems.js';
 import { createKanaCommands } from './learning/kanaCommands.js';
 import { ensureKanaSeeded } from './learning/kanaSeed.js';
+import { ensureVocabSeeded } from './learning/vocabSeed.js';
 import { collectReminderFacts } from './learning/reminderFacts.js';
 import { createDailyReminder } from './scheduler/index.js';
 import { partsInZone, zonedWallClockToInstant } from './scheduler/index.js';
@@ -166,6 +167,10 @@ async function runStartupChecks(): Promise<{ dbRoundTripMs: number }> {
   const seeded = await ensureKanaSeeded(db);
   if (seeded.inserted > 0) {
     logger.info('seeded kana knowledge items', { ...seeded });
+  }
+  const vocabSeeded = await ensureVocabSeeded(db);
+  if (vocabSeeded.inserted > 0) {
+    logger.info('seeded vocabulary knowledge items', { ...vocabSeeded });
   }
   for (const warning of keyFormatWarnings()) {
     logger.warn('provider key format looks unusual', { warning });

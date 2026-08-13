@@ -155,7 +155,6 @@ describe('command routing', () => {
   // 予約のまま残すと catch-all に食われて「未実装」と答えてしまう。
   it.each([
     'roleplay',
-    'vocab',
     'grammar',
     'listening',
     'cost',
@@ -225,6 +224,7 @@ describe('kana command routing', () => {
       progress: vi.fn().mockResolvedValue([{ text: 'R_PROGRESS' }]),
       answer: vi.fn().mockResolvedValue([{ text: 'R_ANSWER' }]),
       answerTyped: vi.fn().mockResolvedValue(undefined),
+      vocab: vi.fn().mockResolvedValue([{ text: 'R_VOCAB' }]),
     };
     const bot = createBot({
       config: fakeConfig(),
@@ -251,6 +251,7 @@ describe('kana command routing', () => {
     ['kana', 'R_KANA'],
     ['review', 'R_REVIEW'],
     ['progress', 'R_PROGRESS'],
+    ['vocab', 'R_VOCAB'],
   ])('routes /%s to the kana layer, not the catch-all', async (name, reply) => {
     const { bot, apiCalls } = setupKana();
 
@@ -292,6 +293,7 @@ describe('typed quiz answers', () => {
       progress: vi.fn().mockResolvedValue([{ text: 'R_PROGRESS' }]),
       answer: vi.fn().mockResolvedValue([{ text: 'R_ANSWER' }]),
       answerTyped: vi.fn().mockResolvedValue(answerTypedResult),
+      vocab: vi.fn().mockResolvedValue([{ text: 'R_VOCAB' }]),
     };
     const handleUpdate = vi.fn().mockResolvedValue(undefined);
     const bot = createBot({

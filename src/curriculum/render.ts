@@ -6,6 +6,8 @@
  */
 import type { Kana } from './kana.js';
 import type { QuizQuestion } from './quiz.js';
+import type { VocabEntry } from './vocabN5.js';
+import type { VocabQuestion } from './vocabQuiz.js';
 
 export interface LessonSummary {
   readonly newKana: readonly Kana[];
@@ -124,4 +126,124 @@ export function renderProgress(view: ProgressView): string {
     `已掌握 ${String(view.mastered)}`,
     `待复习 ${String(view.dueNow)}`,
   ].join('\n');
+}
+
+// ---------- S1 語彙 ----------
+
+/**
+ * 新しい語を教えるカード。
+ *
+ * 漢字には必ず読みを添える。読めない字は覚えようが無いし、
+ * 読みを推測させると間違った音のまま覚える（§15 の誤模倣）。
+ */
+export function renderVocabCard(
+  entry: VocabEntry,
+  index: number,
+  total: number,
+): string {
+  const lines = [
+    `${String(index)}/${String(total)}`,
+    '',
+    entry.expression,
+  ];
+  if (entry.reading !== entry.expression) {
+    lines.push(`　${entry.reading}`);
+  }
+  lines.push('', entry.meaning);
+  if (entry.genkiLesson !== undefined) {
+    lines.push('', `（Genki 第 ${String(entry.genkiLesson)} 课）`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * 出題の本文。
+ *
+ * 打たせる問題は必ず「意味 → 日本語」にする。語を見せて書かせても
+ * 目の前の字を写すだけで、思い出す働きが無い。意味は単独の行に置く
+ * ——返信から何を訊いたかを復元するため（targetOfVocabQuestionText）。
+ */
+export function renderVocabQuestion(
+  question: VocabQuestion,
+  typed = false,
+): string {
+  if (question.kind === 'MEANING_TO_WORD') {
+    return typed
+      ? `这个意思的日文怎么写？\n\n${question.prompt}\n\n回复日文或假名`
+      : `哪个词是「${question.prompt}」？`;
+  }
+  const reading =
+    question.promptReading === undefined ? '' : `\n　${question.promptReading}`;
+  return `这个词是什么意思？\n\n${question.prompt}${reading}`;
+}
+
+export function renderVocabCorrect(entry: VocabEntry): string {
+  const reading =
+    entry.reading === entry.expression ? '' : `（${entry.reading}）`;
+  return `✅ ${entry.expression}${reading} = ${entry.meaning}`;
+}
+
+export function renderVocabWrong(
+  target: VocabEntry,
+  chosen: VocabEntry | undefined,
+  typed?: string,
+): string {
+  const reading =
+    target.reading === target.expression ? '' : `（${target.reading}）`;
+  const lines = [`❌ 正确答案是 ${target.expression}${reading} — ${target.meaning}`];
+  if (chosen !== undefined && chosen.id !== target.id) {
+    lines.push(`你选的 ${chosen.expression} 是「${chosen.meaning}」`);
+  } else if (typed !== undefined && typed.trim() !== '') {
+    lines.push(`你写的是「${typed.trim()}」`);
+  }
+  return lines.join('\n');
+}
+
+export interface DailySummary {
+  readonly stage: string;
+  readonly newKana: readonly Kana[];
+  readonly kanaDue: number;
+  readonly newWords: readonly VocabEntry[];
+  readonly vocabDue: number;
+  readonly kanaProgress: { introduced: number; total: number };
+  readonly vocabProgress: { introduced: number; total: number };
+  readonly heldBack: boolean;
+}
+
+/** 仮名と語彙をまとめた今日の予定。 */
+export function renderDaily(summary: DailySummary): string {
+  const lines: string[] = ['📅 今天的学习', ''];
+
+  if (summary.newKana.length > 0) {
+    lines.push(`新假名 ${String(summary.newKana.length)} 个`);
+    lines.push(`  ${glyphList(summary.newKana)}`);
+  }
+  if (summary.kanaDue > 0) {
+    lines.push(`假名复习 ${String(summary.kanaDue)} 个`);
+  }
+  if (summary.newWords.length > 0) {
+    lines.push(`新单词 ${String(summary.newWords.length)} 个`);
+    lines.push(
+      `  ${summary.newWords.map((w) => `${w.expression}(${w.reading})`).join('  ')}`,
+    );
+  }
+  if (summary.vocabDue > 0) {
+    lines.push(`单词复习 ${String(summary.vocabDue)} 个`);
+  }
+  if (
+    summary.newKana.length === 0 &&
+    summary.newWords.length === 0 &&
+    summary.kanaDue === 0 &&
+    summary.vocabDue === 0
+  ) {
+    lines.push(summary.heldBack ? '复习积压较多，先追平。' : '今天没有到期的内容。');
+  }
+
+  lines.push('');
+  lines.push(
+    `五十音 ${String(summary.kanaProgress.introduced)}/${String(summary.kanaProgress.total)}　単語 ${String(summary.vocabProgress.introduced)}/${String(summary.vocabProgress.total)}`,
+  );
+  lines.push('');
+  lines.push('/kana 练假名　/vocab 练单词　/review 只复习');
+  return lines.join('\n');
 }

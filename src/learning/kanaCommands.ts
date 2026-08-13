@@ -1,11 +1,15 @@
 import { KANA_BY_ID } from '../curriculum/kana.js';
 import {
   renderCorrect,
+  renderDaily,
   renderDrillFinished,
   renderProgress,
   renderQuestion,
   renderTeachingCard,
-  renderToday,
+  renderVocabCard,
+  renderVocabCorrect,
+  renderVocabQuestion,
+  renderVocabWrong,
   renderWrong,
 } from '../curriculum/render.js';
 import type { Random } from '../curriculum/quiz.js';
@@ -14,13 +18,23 @@ import * as learnerProfiles from '../db/repositories/learnerProfiles.js';
 import * as reviewQueue from '../db/repositories/reviewQueue.js';
 import {
   decodeAnswer,
+  decodeVocabAnswer,
   encodeAnswer,
+  encodeVocabAnswer,
   gradeAndRecord,
   gradeTypedAndRecord,
   nextDrillQuestion,
   targetOfQuestionText,
+  targetOfVocabQuestionText,
 } from './kanaDrill.js';
 import { introduceKana, planKanaLesson } from './kanaSession.js';
+import {
+  gradeVocabChoice,
+  gradeVocabTyped,
+  introduceVocab,
+  nextVocabQuestion,
+  planVocabSession,
+} from './vocabSession.js';
 
 /**
  * 仮名学習のコマンド層。
@@ -70,6 +84,8 @@ export interface KanaCommands {
     typed: string,
     askedAt: Date | undefined,
   ): Promise<KanaReply[] | undefined>;
+  /** S1：単語の練習。 */
+  vocab(telegramUserId: number): Promise<KanaReply[]>;
 }
 
 export interface KanaCommandDeps {
@@ -115,6 +131,35 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
     return elapsed >= 0 && elapsed < 600_000 ? elapsed : undefined;
   }
 
+  /** 単語の次の一問。 */
+  async function askNextVocab(
+    learnerId: string,
+    now: Date,
+    answered: number,
+  ): Promise<KanaReply[]> {
+    const next = await nextVocabQuestion(executor, learnerId, now, {
+      optionCount: deps.optionCount,
+      random: deps.random,
+    });
+    if (next === undefined) {
+      return [{ text: renderDrillFinished(answered) }];
+    }
+    if (next.typed) {
+      return [
+        { text: renderVocabQuestion(next.question, true), expectsReply: true },
+      ];
+    }
+    return [
+      {
+        text: renderVocabQuestion(next.question),
+        buttons: next.question.options.map((option) => ({
+          label: option.label,
+          data: encodeVocabAnswer(next.question.targetId, option.vocabId),
+        })),
+      },
+    ];
+  }
+
   /** 次の一問。無ければ締めの一言。 */
   async function askNext(
     learnerId: string,
@@ -126,7 +171,8 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       random: deps.random,
     });
     if (next === undefined) {
-      return [{ text: renderDrillFinished(answered) }];
+      // 仮名が片付いたら単語へ。両方無ければ締める。
+      return askNextVocab(learnerId, now, answered);
     }
     if (next.typed) {
       // 選択肢を出さない。四択は消去法で当たるので、打てて初めて
@@ -153,7 +199,8 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
-      const lesson = await planKanaLesson(
+      const kana = await planKanaLesson(executor, learnerId, now, lessonOptions);
+      const vocab = await planVocabSession(
         executor,
         learnerId,
         now,
@@ -161,11 +208,15 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       );
       return [
         {
-          text: renderToday({
-            newKana: lesson.newKana,
-            reviewCount: lesson.dueTotal,
-            newHeldBackForBacklog: lesson.newHeldBackForBacklog,
-            progress: lesson.progress,
+          text: renderDaily({
+            stage: vocab.stage,
+            newKana: kana.newKana,
+            kanaDue: kana.dueTotal,
+            newWords: vocab.newWords,
+            vocabDue: vocab.dueTotal,
+            kanaProgress: kana.progress,
+            vocabProgress: vocab.progress,
+            heldBack: kana.newHeldBackForBacklog || vocab.newHeldBackForBacklog,
           }),
         },
       ];
@@ -247,13 +298,37 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
 
+      const now = deps.now();
+
+      // 単語の回答は別の接頭辞。仮名として採点しないよう先に分ける。
+      const vocabAnswer = decodeVocabAnswer(callbackData);
+      if (vocabAnswer !== undefined) {
+        const gradedVocab = await gradeVocabChoice(
+          executor,
+          learnerId,
+          vocabAnswer.targetId,
+          vocabAnswer.chosenId,
+          now,
+          deps.requestRetention,
+          responseMsOf(askedAt, now),
+        );
+        const vocabFeedback: KanaReply = gradedVocab.correct
+          ? { text: renderVocabCorrect(gradedVocab.target) }
+          : {
+              text: renderVocabWrong(gradedVocab.target, gradedVocab.chosen),
+            };
+        return [
+          vocabFeedback,
+          ...(await askNextVocab(learnerId, now, 1)),
+        ];
+      }
+
       const decoded = decodeAnswer(callbackData);
       if (decoded === undefined) {
         // 古いメッセージのボタンを押した場合など。黙って落とさない。
         return [{ text: '这道题已经过期了，发 /kana 继续。' }];
       }
 
-      const now = deps.now();
       const graded = await gradeAndRecord(
         executor,
         learnerId,
@@ -276,16 +351,78 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       return [feedback, ...(await askNext(learnerId, now, 1))];
     },
 
+    async vocab(telegramUserId) {
+      const learnerId = await learnerIdOf(telegramUserId);
+      if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
+      const now = deps.now();
+      const lesson = await planVocabSession(
+        executor,
+        learnerId,
+        now,
+        lessonOptions,
+      );
+
+      if (lesson.stage === 'S0_KANA_ONLY') {
+        return [
+          {
+            text: '先把五十音的清音学完，再开始背单词——现在很多字还读不出来。\n\n发 /kana 继续。',
+          },
+        ];
+      }
+
+      const replies: KanaReply[] = [];
+      if (lesson.newWords.length > 0) {
+        lesson.newWords.forEach((entry, index) => {
+          replies.push({
+            text: renderVocabCard(entry, index + 1, lesson.newWords.length),
+          });
+        });
+        await introduceVocab(
+          executor,
+          learnerId,
+          lesson.newWords.map((entry) => entry.id),
+          now,
+        );
+      }
+      replies.push(...(await askNextVocab(learnerId, now, 0)));
+      return replies;
+    },
+
     async answerTyped(telegramUserId, questionText, typed, askedAt) {
       // 返信元が出題でなければ、これは答えではなく普通の会話。
       // undefined を返して、呼び出し側に通常の経路へ渡させる。
       const targetId = targetOfQuestionText(questionText);
-      if (targetId === undefined) return undefined;
+      const vocabTargetId =
+        targetId === undefined
+          ? targetOfVocabQuestionText(questionText)
+          : undefined;
+      if (targetId === undefined && vocabTargetId === undefined) {
+        return undefined;
+      }
 
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
 
       const now = deps.now();
+
+      if (vocabTargetId !== undefined) {
+        const gradedVocab = await gradeVocabTyped(
+          executor,
+          learnerId,
+          vocabTargetId,
+          typed,
+          now,
+          deps.requestRetention,
+          responseMsOf(askedAt, now),
+        );
+        const feedbackVocab: KanaReply = gradedVocab.correct
+          ? { text: renderVocabCorrect(gradedVocab.target) }
+          : {
+              text: renderVocabWrong(gradedVocab.target, undefined, typed),
+            };
+        return [feedbackVocab, ...(await askNextVocab(learnerId, now, 1))];
+      }
+      if (targetId === undefined) return undefined;
       const graded = await gradeTypedAndRecord(
         executor,
         learnerId,

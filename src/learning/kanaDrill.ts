@@ -14,6 +14,7 @@ import {
   type Random,
 } from '../curriculum/quiz.js';
 import type { ReviewOutcome } from '../curriculum/review.js';
+import { VOCAB_N5_BY_ID } from '../curriculum/vocabN5.js';
 import type { Executor } from '../db/repositories/executor.js';
 import * as reviewQueue from '../db/repositories/reviewQueue.js';
 import { recordKanaAnswer } from './kanaSession.js';
@@ -260,4 +261,51 @@ export function decodeAnswer(data: string): DecodedAnswer | undefined {
   if (kind === undefined) return undefined;
   if (!KANA_BY_ID.has(targetId) || !KANA_BY_ID.has(chosenId)) return undefined;
   return { targetId, chosenId, kind };
+}
+
+/**
+ * 単語の回答。仮名とは別の接頭辞にする——同じ `kq:` に混ぜると、
+ * 古いメッセージのボタンを押したときに仮名として採点しかねない。
+ *
+ * 単語 id は `表記#読み` で、`:` を含まないので区切りに使える。
+ */
+export function encodeVocabAnswer(targetId: string, chosenId: string): string {
+  return `vq:${targetId}:${chosenId}`;
+}
+
+export interface DecodedVocabAnswer {
+  readonly targetId: string;
+  readonly chosenId: string;
+}
+
+export function decodeVocabAnswer(
+  data: string,
+): DecodedVocabAnswer | undefined {
+  const parts = data.split(':');
+  if (parts.length !== 3 || parts[0] !== 'vq') return undefined;
+  const [, targetId, chosenId] = parts;
+  if (targetId === undefined || chosenId === undefined) return undefined;
+  if (!VOCAB_N5_BY_ID.has(targetId) || !VOCAB_N5_BY_ID.has(chosenId)) {
+    return undefined;
+  }
+  return { targetId, chosenId };
+}
+
+/**
+ * 単語の出題本文から、何を訊かれたかを復元する。
+ *
+ * 打たせる問題は「意味 → 日本語」なので、鍵になるのは語義の行。
+ * 同じ語義の語が複数あるとき（"blue" は 青 と 青い）はどれを返しても
+ * よい——採点側が同義語をまとめて正解にする。
+ */
+export function targetOfVocabQuestionText(text: string): string | undefined {
+  const byMeaning = new Map<string, string>();
+  for (const entry of VOCAB_N5_BY_ID.values()) {
+    if (!byMeaning.has(entry.meaning)) byMeaning.set(entry.meaning, entry.id);
+  }
+  for (const line of text.split('\n')) {
+    const found = byMeaning.get(line.trim());
+    if (found !== undefined) return found;
+  }
+  return undefined;
 }

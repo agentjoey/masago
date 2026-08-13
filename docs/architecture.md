@@ -246,9 +246,9 @@ V1 方案：括注形式 `漢字（かんじ）`，并按学习者掌握度动�
 
 ```
 /today    今日课程          /review   立即复习到期项
-/kana     五十音训练        /progress 学习进度
-/explain  追问上一条        /cost     成本
-/end      结束今日 session
+/kana     五十音训练        /vocab    N5 单词训练
+/progress 学习进度          /explain  追问上一条
+/cost     成本              /end      结束今日 session
 ```
 
 对话练习相关命令（`/talk`、`/roleplay`）在 V1 保留但为辅助功能。

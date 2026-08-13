@@ -6,6 +6,7 @@ import type {
   KanaReply,
 } from '../../learning/kanaCommands.js';
 import { kanaAudioFileName } from '../../learning/kanaCommands.js';
+import type { SpokenAudio } from '../../speech/voiceCache.js';
 import type { AppContext } from '../bot.js';
 
 /**
@@ -19,6 +20,12 @@ export interface KanaHandlerDeps {
   readonly commands: KanaCommands;
   /** 事前生成した仮名音声の置き場。 */
   readonly audioDir: string;
+  /**
+   * 単語の読み上げ。仮名は音库で足りるが、単語は数が多いので合成する。
+   * 省略すると読み上げは黙って行われない（文字だけで学習は続けられる）。
+   */
+  readonly speak?: (text: string) => Promise<SpokenAudio>;
+  readonly rememberVoice?: (text: string, fileId: string) => Promise<void>;
 }
 
 function keyboardOf(reply: KanaReply): InlineKeyboard | undefined {
@@ -34,11 +41,37 @@ function keyboardOf(reply: KanaReply): InlineKeyboard | undefined {
   return keyboard;
 }
 
+async function sendSpoken(
+  ctx: AppContext,
+  text: string,
+  deps: KanaHandlerDeps,
+): Promise<void> {
+  if (deps.speak === undefined) return;
+  try {
+    const spoken = await deps.speak(text);
+    if (spoken.fileId !== undefined) {
+      // 送信済みの音声。合成もアップロードもしない。
+      await ctx.replyWithVoice(spoken.fileId);
+      return;
+    }
+    if (spoken.bytes === undefined) return;
+    const sent = await ctx.replyWithVoice(new InputFile(spoken.bytes));
+    const fileId = sent.voice?.file_id;
+    if (fileId !== undefined) {
+      await deps.rememberVoice?.(text, fileId);
+    }
+  } catch (error) {
+    // 音が出せなくても学習は続く。文字は既に送ってある。
+    ctx.logger.warn('could not speak text', { text, error });
+  }
+}
+
 async function send(
   ctx: AppContext,
   replies: readonly KanaReply[],
-  audioDir: string,
+  deps: KanaHandlerDeps,
 ): Promise<void> {
+  const { audioDir } = deps;
   for (const reply of replies) {
     const keyboard = keyboardOf(reply);
     // 打ち込みで答える問題は ForceReply を付ける。返信にしておけば
@@ -52,6 +85,9 @@ async function send(
           : {};
     await ctx.reply(reply.text, markup);
 
+    if (reply.speakText !== undefined) {
+      await sendSpoken(ctx, reply.speakText, deps);
+    }
     if (reply.audioKanaId === undefined) continue;
     const fileName = kanaAudioFileName(reply.audioKanaId);
     if (fileName === undefined) continue;
@@ -81,7 +117,7 @@ export function registerKanaCommands(
   bot: Bot<AppContext>,
   deps: KanaHandlerDeps,
 ): void {
-  const { commands, audioDir } = deps;
+  const { commands } = deps;
 
   const run = (
     handler: (userId: number) => Promise<KanaReply[]>,
@@ -89,7 +125,7 @@ export function registerKanaCommands(
     return async (ctx) => {
       const userId = ctx.from?.id;
       if (userId === undefined) return;
-      await send(ctx, await handler(userId), audioDir);
+      await send(ctx, await handler(userId), deps);
     };
   };
 
@@ -127,7 +163,7 @@ export function registerKanaCommands(
       await next();
       return;
     }
-    await send(ctx, replies, audioDir);
+    await send(ctx, replies, deps);
   });
 
     // 仮名は kq:、単語は vq:。どちらも同じ経路で採点する。
@@ -153,7 +189,7 @@ export function registerKanaCommands(
     await send(
       ctx,
       await commands.answer(userId, ctx.callbackQuery.data, askedAt),
-      audioDir,
+      deps,
     );
   });
 }

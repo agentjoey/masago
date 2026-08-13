@@ -80,3 +80,36 @@ export type UsageRecord = typeof usageRecords.$inferSelect;
 export type NewUsageRecord = typeof usageRecords.$inferInsert;
 export type OutboxJob = typeof outboxJobs.$inferSelect;
 export type NewOutboxJob = typeof outboxJobs.$inferInsert;
+
+/**
+ * 合成済み音声の再利用（V2 §5.3）。
+ *
+ * 保存するのは音声そのものではなく **Telegram の file_id**。一度でも
+ * 送った音声は file_id で何度でも送り直せる——再合成も再アップロードも
+ * 要らず、保管場所も要らない。Railway は無状態なのでローカルに置いても
+ * 再デプロイで消えるし、オブジェクトストレージを足すには早すぎる。
+ *
+ * 復習キューは設計上「同じ項目」を何ヶ月も繰り返すので、当たる回数が多い。
+ */
+export const ttsCache = pgTable(
+  'tts_cache',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    /** hash(text + voice_id + model)。声やモデルを変えたら別物になる。 */
+    cacheKey: text('cache_key').notNull().unique(),
+    text: text('text').notNull(),
+    voiceId: text('voice_id').notNull(),
+    model: text('model').notNull(),
+    telegramFileId: text('telegram_file_id').notNull(),
+    useCount: integer('use_count').default(1).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index('tts_cache_last_used_at_idx').on(table.lastUsedAt)],
+);
+
+export type TtsCacheEntry = typeof ttsCache.$inferSelect;

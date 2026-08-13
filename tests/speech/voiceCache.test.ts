@@ -1,0 +1,77 @@
+import { describe, expect, it, vi } from 'vitest';
+import { speak, type VoiceCachePort } from '../../src/speech/voiceCache.js';
+import type { TextToSpeechProvider } from '../../src/speech/tts/types.js';
+
+function fakeTts(overrides?: Partial<TextToSpeechProvider>): TextToSpeechProvider {
+  return {
+    name: 'fake',
+    model: 'speech-test',
+    outputFormat: 'mp3',
+    synthesize: vi.fn().mockResolvedValue({
+      bytes: Buffer.from('audio'),
+      format: 'mp3',
+      provider: 'fake',
+      model: 'speech-test',
+    }),
+    ...overrides,
+  } as TextToSpeechProvider;
+}
+
+function fakeCache(hit?: string): VoiceCachePort & { remembered: string[] } {
+  const remembered: string[] = [];
+  return {
+    remembered,
+    lookup: () => Promise.resolve(hit),
+    remember: (text) => {
+      remembered.push(text);
+      return Promise.resolve();
+    },
+  };
+}
+
+describe('speak', () => {
+  it('synthesises the first time', async () => {
+    const tts = fakeTts();
+    const result = await speak('いま', {
+      cache: fakeCache(),
+      tts,
+      voiceId: 'v1',
+    });
+    expect(result.cached).toBe(false);
+    expect(result.bytes?.toString()).toBe('audio');
+    expect(tts.synthesize).toHaveBeenCalledOnce();
+  });
+
+  // 復習は同じ項目を何ヶ月も繰り返す。ここが当たるほど費用が下がる。
+  it('reuses the file id and does not synthesise again', async () => {
+    const tts = fakeTts();
+    const result = await speak('いま', {
+      cache: fakeCache('AgADBAADq'),
+      tts,
+      voiceId: 'v1',
+    });
+    expect(result.cached).toBe(true);
+    expect(result.fileId).toBe('AgADBAADq');
+    expect(result.bytes).toBeUndefined();
+    expect(tts.synthesize).not.toHaveBeenCalled();
+  });
+
+  it('returns nothing playable rather than silence when the provider gives no bytes', async () => {
+    const tts = fakeTts({
+      synthesize: vi.fn().mockResolvedValue({
+        path: '/tmp/x.mp3',
+        format: 'mp3',
+        provider: 'fake',
+        model: 'speech-test',
+      }),
+    });
+    const result = await speak('いま', {
+      cache: fakeCache(),
+      tts,
+      voiceId: 'v1',
+    });
+    expect(result.cached).toBe(false);
+    expect(result.bytes).toBeUndefined();
+    expect(result.fileId).toBeUndefined();
+  });
+});

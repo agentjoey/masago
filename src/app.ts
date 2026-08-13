@@ -8,6 +8,8 @@ import { createKnowledgeKeyStore } from './db/repositories/knowledgeItems.js';
 import { createKanaCommands } from './learning/kanaCommands.js';
 import { ensureKanaSeeded } from './learning/kanaSeed.js';
 import { ensureVocabSeeded } from './learning/vocabSeed.js';
+import * as ttsCacheRepo from './db/repositories/ttsCache.js';
+import { speak } from './speech/voiceCache.js';
 import { collectReminderFacts } from './learning/reminderFacts.js';
 import { createDailyReminder } from './scheduler/index.js';
 import { partsInZone, zonedWallClockToInstant } from './scheduler/index.js';
@@ -198,7 +200,41 @@ const bot = createBot({
     return result.inserted;
   },
   commands: sessionCommands,
-  kana: { commands: kanaCommands, audioDir: config.kana.audioDir },
+  kana: {
+    commands: kanaCommands,
+    audioDir: config.kana.audioDir,
+    // 単語の読み上げ。一度送れば file_id で使い回すので、同じ語の
+    // 二度目以降は合成費用がかからない（§5.3）。
+    speak: (text) =>
+      speak(text, {
+        cache: {
+          lookup: (value) =>
+            ttsCacheRepo.lookup(
+              db,
+              ttsCacheRepo.ttsCacheKey(
+                value,
+                config.tts.minimaxVoiceId,
+                config.tts.modelTeaching,
+              ),
+            ),
+          remember: () => Promise.resolve(),
+        },
+        tts,
+        voiceId: config.tts.minimaxVoiceId,
+      }),
+    rememberVoice: (text, fileId) =>
+      ttsCacheRepo.remember(db, {
+        cacheKey: ttsCacheRepo.ttsCacheKey(
+          text,
+          config.tts.minimaxVoiceId,
+          config.tts.modelTeaching,
+        ),
+        text,
+        voiceId: config.tts.minimaxVoiceId,
+        model: config.tts.modelTeaching,
+        telegramFileId: fileId,
+      }),
+  },
 });
 
 const dailyReminder = createDailyReminder({

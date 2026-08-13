@@ -62,6 +62,11 @@ export interface KanaReply {
    * 取り違えない。
    */
   readonly expectsReply?: boolean;
+  /**
+   * 読み上げてほしい日本語。仮名は事前生成の音库で足りるが、
+   * 単語は数が多く合成が要る。二度目からは file_id で送るので費用は一度きり。
+   */
+  readonly speakText?: string;
 }
 
 export interface KanaCommands {
@@ -316,6 +321,7 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
           ? { text: renderVocabCorrect(gradedVocab.target) }
           : {
               text: renderVocabWrong(gradedVocab.target, gradedVocab.chosen),
+              speakText: gradedVocab.target.reading,
             };
         return [
           vocabFeedback,
@@ -375,6 +381,9 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         lesson.newWords.forEach((entry, index) => {
           replies.push({
             text: renderVocabCard(entry, index + 1, lesson.newWords.length),
+            // 読みだけを合成する。表記を読ませると読み方が定まらない
+            // （「今」は いま とも こん とも読む）。
+            speakText: entry.reading,
           });
         });
         await introduceVocab(
@@ -419,6 +428,7 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
           ? { text: renderVocabCorrect(gradedVocab.target) }
           : {
               text: renderVocabWrong(gradedVocab.target, undefined, typed),
+              speakText: gradedVocab.target.reading,
             };
         return [feedbackVocab, ...(await askNextVocab(learnerId, now, 1))];
       }

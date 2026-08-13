@@ -1,0 +1,105 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { InlineKeyboard, InputFile, type Bot } from 'grammy';
+import type {
+  KanaCommands,
+  KanaReply,
+} from '../../learning/kanaCommands.js';
+import { kanaAudioFileName } from '../../learning/kanaCommands.js';
+import type { AppContext } from '../bot.js';
+
+/**
+ * 仮名コマンドの Telegram 側。
+ *
+ * ここは翻訳だけ：何を出すかは learning/ が決め、この層は送るだけ。
+ * DB も出題ロジックも触らない（INTERFACES.md §1）。
+ */
+
+export interface KanaHandlerDeps {
+  readonly commands: KanaCommands;
+  /** 事前生成した仮名音声の置き場。 */
+  readonly audioDir: string;
+}
+
+function keyboardOf(reply: KanaReply): InlineKeyboard | undefined {
+  if (reply.buttons === undefined || reply.buttons.length === 0) {
+    return undefined;
+  }
+  const keyboard = new InlineKeyboard();
+  reply.buttons.forEach((button, index) => {
+    keyboard.text(button.label, button.data);
+    // 2 列。1 列だと縦に伸びすぎ、4 列だと文字が潰れる。
+    if (index % 2 === 1) keyboard.row();
+  });
+  return keyboard;
+}
+
+async function send(
+  ctx: AppContext,
+  replies: readonly KanaReply[],
+  audioDir: string,
+): Promise<void> {
+  for (const reply of replies) {
+    const keyboard = keyboardOf(reply);
+    await ctx.reply(reply.text, keyboard === undefined ? {} : { reply_markup: keyboard });
+
+    if (reply.audioKanaId === undefined) continue;
+    const fileName = kanaAudioFileName(reply.audioKanaId);
+    if (fileName === undefined) continue;
+    const path = join(audioDir, fileName);
+    // 音库が欠けていても学習は続けられる。文字は既に送ってある。
+    if (!existsSync(path)) {
+      ctx.logger.warn('kana audio missing', { kanaId: reply.audioKanaId, path });
+      continue;
+    }
+    await ctx.replyWithVoice(new InputFile(path));
+  }
+}
+
+export function registerKanaCommands(
+  bot: Bot<AppContext>,
+  deps: KanaHandlerDeps,
+): void {
+  const { commands, audioDir } = deps;
+
+  const run = (
+    handler: (userId: number) => Promise<KanaReply[]>,
+  ): ((ctx: AppContext) => Promise<void>) => {
+    return async (ctx) => {
+      const userId = ctx.from?.id;
+      if (userId === undefined) return;
+      await send(ctx, await handler(userId), audioDir);
+    };
+  };
+
+  bot.command('today', run((userId) => commands.today(userId)));
+  bot.command('kana', run((userId) => commands.drill(userId)));
+  bot.command('review', run((userId) => commands.review(userId)));
+  bot.command('progress', run((userId) => commands.progress(userId)));
+
+  bot.callbackQuery(/^kq:/, async (ctx) => {
+    const userId = ctx.from.id;
+    // 先に応答しないと、Telegram はボタンを押しっぱなしの表示にする。
+    await ctx.answerCallbackQuery();
+
+    const message = ctx.callbackQuery.message;
+    // date は秒。出題から解答までの時間は評定に使う（§3.2）。
+    const askedAt =
+      message !== undefined && 'date' in message
+        ? new Date(message.date * 1000)
+        : undefined;
+
+    // 押された選択肢のキーボードは消す。押し直しで二重採点されるのを防ぐ。
+    try {
+      await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+    } catch (error) {
+      ctx.logger.debug('could not clear keyboard', { error });
+    }
+
+    await send(
+      ctx,
+      await commands.answer(userId, ctx.callbackQuery.data, askedAt),
+      audioDir,
+    );
+  });
+}

@@ -70,6 +70,13 @@ const envSchema = z.object({
   SURFACE_MAX_ITEMS: z.coerce.number().int().min(1).default(3),
   SURFACE_HIGH_IMPORTANCE_THRESHOLD: z.coerce.number().int().min(1).default(2),
 
+  // 仮名音声ライブラリ（事前生成済み、実行時に TTS を呼ばない）
+  KANA_AUDIO_DIR: z.string().min(1).default('assets/kana-audio'),
+  KANA_OPTION_COUNT: z.coerce.number().int().min(2).max(8).default(4),
+  KANA_NEW_PER_DAY: z.coerce.number().int().min(0).max(20).default(5),
+  KANA_MAX_REVIEWS: z.coerce.number().int().min(1).default(20),
+  KANA_BACKLOG_THRESHOLD: z.coerce.number().int().min(1).default(20),
+
   // Review scheduling (FSRS)
   // 目標保持率。0.9 なら復習時点で 90% 思い出せる想定で間隔を引く。
   // 上げるほど復習は増えて忘れにくく、下げるほど楽になるが取りこぼす。
@@ -145,6 +152,13 @@ export const configSchema = envSchema.transform((env) => ({
   },
   review: {
     requestRetention: env.FSRS_REQUEST_RETENTION,
+  },
+  kana: {
+    audioDir: env.KANA_AUDIO_DIR,
+    optionCount: env.KANA_OPTION_COUNT,
+    newPerDay: env.KANA_NEW_PER_DAY,
+    maxReviews: env.KANA_MAX_REVIEWS,
+    backlogThreshold: env.KANA_BACKLOG_THRESHOLD,
   },
   session: {
     userTimezone: env.USER_TIMEZONE,

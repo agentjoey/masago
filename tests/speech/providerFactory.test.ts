@@ -58,6 +58,13 @@ function makeConfig(overrides?: {
     review: {
       requestRetention: 0.9,
     },
+    kana: {
+      audioDir: 'assets/kana-audio',
+      optionCount: 4,
+      newPerDay: 5,
+      maxReviews: 20,
+      backlogThreshold: 20,
+    },
     correction: {
       surfaceAfterTurnsConversation: 4,
       surfaceAfterTurnsCoach: 1,

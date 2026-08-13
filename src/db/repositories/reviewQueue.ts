@@ -124,6 +124,28 @@ export async function countDue(
   return rows[0]?.count ?? 0;
 }
 
+export async function countMastered(
+  tx: Executor,
+  learnerId: string,
+  type: KnowledgeType,
+): Promise<number> {
+  const rows = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(reviewQueue)
+    .innerJoin(
+      knowledgeItems,
+      eq(reviewQueue.knowledgeItemId, knowledgeItems.id),
+    )
+    .where(
+      and(
+        eq(reviewQueue.learnerId, learnerId),
+        eq(knowledgeItems.type, type),
+        eq(reviewQueue.state, 'MASTERED'),
+      ),
+    );
+  return rows[0]?.count ?? 0;
+}
+
 /**
  * キューに入っている知識項目のキー＝「一度は導入した」もの。
  * 新出を選ぶときに、既に出したものを除くのに使う。

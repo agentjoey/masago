@@ -5,6 +5,8 @@ import { config } from './config/index.js';
 import { createCorrectionTurnHooks } from './corrections/index.js';
 import { closeDb, db, telegramUpdatesRepo } from './db/index.js';
 import { createKnowledgeKeyStore } from './db/repositories/knowledgeItems.js';
+import { createKanaCommands } from './learning/kanaCommands.js';
+import { ensureKanaSeeded } from './learning/kanaSeed.js';
 import { createLogger } from './observability/index.js';
 import {
   createCommandHandlers,
@@ -136,10 +138,27 @@ async function runStartupChecks(): Promise<void> {
     throw new Error('startup check failed: ffmpeg is not available on PATH');
   }
   await db.execute(sql`select 1`);
+  // 仮名は 104 個で増えない。揃っていれば一件の SELECT で戻るので、
+  // 起動ごとに呼んでも compute を無駄に起こさない（§9.1）。
+  const seeded = await ensureKanaSeeded(db);
+  if (seeded.inserted > 0) {
+    logger.info('seeded kana knowledge items', { ...seeded });
+  }
   for (const warning of keyFormatWarnings()) {
     logger.warn('provider key format looks unusual', { warning });
   }
 }
+
+const kanaCommands = createKanaCommands({
+  executor: db,
+  now: () => new Date(),
+  random: Math.random,
+  requestRetention: config.review.requestRetention,
+  optionCount: config.kana.optionCount,
+  newPerDay: config.kana.newPerDay,
+  maxReviews: config.kana.maxReviews,
+  backlogThreshold: config.kana.backlogThreshold,
+});
 
 const bot = createBot({
   config,
@@ -150,6 +169,7 @@ const bot = createBot({
     return result.inserted;
   },
   commands: sessionCommands,
+  kana: { commands: kanaCommands, audioDir: config.kana.audioDir },
 });
 
 onShutdown(() => bot.stop());

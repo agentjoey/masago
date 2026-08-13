@@ -229,6 +229,25 @@ export function isCorrectChoice(
 }
 
 /**
+ * 出題オブジェクトを持たずに採点する。
+ *
+ * 回答は Telegram のコールバックで返ってくるだけなので、出した問題を
+ * どこかに覚えておく必要がある——が、覚えたものは必ずいつか失われる
+ * （再起動、タイムアウト、別端末）。同じ判定規則を出題側と共有して、
+ * 「対象と選択」だけから採点できるようにしておく。
+ */
+export function isCorrectAnswer(
+  targetId: string,
+  chosenId: string,
+  kind: QuestionKind,
+): boolean {
+  const target = KANA_BY_ID.get(targetId);
+  if (target === undefined) return false;
+  if (chosenId === targetId) return true;
+  return indistinguishableFrom(target, kind).has(chosenId);
+}
+
+/**
  * 打ち込まれたローマ字が正解か。§4.3 の第二段で使う。
  *
  * 「ji」と打たれたら じ でも ぢ でも通す——ローマ字だけでは本当に

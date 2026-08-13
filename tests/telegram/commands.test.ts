@@ -150,13 +150,13 @@ describe('command routing', () => {
     expect(apiCalls).toHaveLength(0);
   });
 
+  // /review と /progress は仮名コマンドが実装済みなので、ここには居ない。
+  // 予約のまま残すと catch-all に食われて「未実装」と答えてしまう。
   it.each([
     'roleplay',
-    'review',
     'vocab',
     'grammar',
     'listening',
-    'progress',
     'cost',
   ])('replies "not enabled" for reserved command /%s without touching the business layer', async (name) => {
     const { bot, commands, handleUpdate, apiCalls } = setup();
@@ -211,6 +211,72 @@ describe('command routing', () => {
     // 消息落入未知命令兜底而不是会话路由——这正是必须用 commandUpdate 造命令消息的原因。
     expect(commands.switchToCoach).not.toHaveBeenCalled();
     expect(handleUpdate).not.toHaveBeenCalled();
+    expect(sentTexts(apiCalls)).toEqual([UNKNOWN_COMMAND_REPLY]);
+  });
+});
+
+describe('kana command routing', () => {
+  function setupKana() {
+    const kanaCommands = {
+      today: vi.fn().mockResolvedValue([{ text: 'R_TODAY' }]),
+      drill: vi.fn().mockResolvedValue([{ text: 'R_KANA' }]),
+      review: vi.fn().mockResolvedValue([{ text: 'R_REVIEW' }]),
+      progress: vi.fn().mockResolvedValue([{ text: 'R_PROGRESS' }]),
+      answer: vi.fn().mockResolvedValue([{ text: 'R_ANSWER' }]),
+    };
+    const bot = createBot({
+      config: fakeConfig(),
+      logger: fakeLogger(),
+      handleUpdate: vi.fn().mockResolvedValue(undefined),
+      recordUpdate: vi.fn().mockResolvedValue(true),
+      commands: {
+        switchToConversation: vi.fn().mockResolvedValue('R_TALK'),
+        switchToCoach: vi.fn().mockResolvedValue('R_COACH'),
+        switchToChallenge: vi.fn().mockResolvedValue('R_CHALLENGE'),
+        endSession: vi.fn().mockResolvedValue('R_END'),
+      },
+      kana: { commands: kanaCommands, audioDir: 'assets/kana-audio' },
+    });
+    const apiCalls = stubBotApi(bot);
+    return { bot, kanaCommands, apiCalls };
+  }
+
+  // registerCommands の末尾には「/で始まる未知の語」を拾う catch-all がある。
+  // 仮名コマンドを後から登録すると、全部そこに食われて「未知命令」になる。
+  // 登録順の事故は動かすまで気づけないので、ここで固定する。
+  it.each([
+    ['today', 'R_TODAY'],
+    ['kana', 'R_KANA'],
+    ['review', 'R_REVIEW'],
+    ['progress', 'R_PROGRESS'],
+  ])('routes /%s to the kana layer, not the catch-all', async (name, reply) => {
+    const { bot, apiCalls } = setupKana();
+
+    await bot.handleUpdate(
+      commandUpdate({
+        updateId: 4000 + name.length,
+        userId: ALLOWED_USER_ID,
+        messageId: 300,
+        command: name,
+      }),
+    );
+
+    const texts = sentTexts(apiCalls);
+    expect(texts).toEqual([reply]);
+    expect(texts).not.toContain(UNKNOWN_COMMAND_REPLY);
+    expect(texts).not.toContain(COMMAND_NOT_ENABLED_REPLY);
+  });
+
+  it('still reports genuinely unknown commands', async () => {
+    const { bot, apiCalls } = setupKana();
+    await bot.handleUpdate(
+      commandUpdate({
+        updateId: 4100,
+        userId: ALLOWED_USER_ID,
+        messageId: 301,
+        command: 'nonsense',
+      }),
+    );
     expect(sentTexts(apiCalls)).toEqual([UNKNOWN_COMMAND_REPLY]);
   });
 });

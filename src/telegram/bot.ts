@@ -54,3 +54,31 @@ export function createBot(deps: BotDeps): Bot<AppContext> {
 
   return bot;
 }
+
+/**
+ * Telegram のコマンド一覧。入力欄に候補が出るようになる。
+ *
+ * 説明は中国語。読むのは日本語をまだ知らない人。
+ * 失敗しても起動は続ける——一覧が出ないだけで、コマンド自体は打てる。
+ */
+export const BOT_COMMANDS = [
+  { command: 'today', description: '今天学什么' },
+  { command: 'kana', description: '练五十音' },
+  { command: 'vocab', description: '练 N5 单词' },
+  { command: 'review', description: '只复习到期的' },
+  { command: 'progress', description: '学习进度' },
+  { command: 'explain', description: '讲解刚才那一项' },
+  { command: 'cost', description: '用量与成本' },
+  { command: 'help', description: '使用说明' },
+] as const;
+
+export async function publishCommandList(
+  bot: Bot<AppContext>,
+  logger: Logger,
+): Promise<void> {
+  try {
+    await bot.api.setMyCommands([...BOT_COMMANDS]);
+  } catch (error) {
+    logger.warn('could not publish the command list', { error });
+  }
+}

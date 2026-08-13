@@ -32,7 +32,12 @@ import {
 } from './sessions/index.js';
 import { isFfmpegAvailable } from './speech/index.js';
 import { createSpeechProviders } from './speech/providerFactory.js';
-import { createBot, startWithRetry, type AppContext } from './telegram/index.js';
+import {
+  createBot,
+  publishCommandList,
+  startWithRetry,
+  type AppContext,
+} from './telegram/index.js';
 import { createVoiceDownloader } from './telegram/voice.js';
 import { createRecorder, recordUsage, summarizeUsage } from './usage/index.js';
 import pkg from '../package.json' with { type: 'json' };
@@ -357,6 +362,7 @@ async function main(): Promise<void> {
   });
   logger.info('masago started', { version: pkg.version });
   dailyReminder.start();
+  await publishCommandList(bot, logger);
   await startWithRetry(bot, {
     logger,
     onStart: (username) => {

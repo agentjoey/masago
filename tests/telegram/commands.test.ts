@@ -4,7 +4,11 @@ import {
   COMMAND_NOT_ENABLED_REPLY,
   UNKNOWN_COMMAND_REPLY,
 } from '../../src/telegram/commands/index.js';
-import { createBot, type AppContext } from '../../src/telegram/index.js';
+import {
+  BOT_COMMANDS,
+  createBot,
+  type AppContext,
+} from '../../src/telegram/index.js';
 import {
   ALLOWED_USER_ID,
   commandUpdate,
@@ -438,5 +442,62 @@ describe('kana command failures', () => {
     expect(sentTexts(apiCalls)).toEqual(['刚才没能处理，请再试一次。']);
     // 失敗をチューターに流して二重に応答しない
     expect(handleUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe('published command list', () => {
+  // 一覧に出るのに実装が無い、あるいはその逆だと、使う側は気づけない。
+  it('lists only commands that are actually registered', async () => {
+    const { bot, apiCalls } = (() => {
+      const kanaCommands = {
+        today: vi.fn().mockResolvedValue([{ text: 'x' }]),
+        drill: vi.fn().mockResolvedValue([{ text: 'x' }]),
+        review: vi.fn().mockResolvedValue([{ text: 'x' }]),
+        progress: vi.fn().mockResolvedValue([{ text: 'x' }]),
+        answer: vi.fn().mockResolvedValue([{ text: 'x' }]),
+        answerTyped: vi.fn().mockResolvedValue(undefined),
+        vocab: vi.fn().mockResolvedValue([{ text: 'x' }]),
+        cost: vi.fn().mockResolvedValue([{ text: 'x' }]),
+        explain: vi.fn().mockResolvedValue([{ text: 'x' }]),
+        start: vi.fn().mockResolvedValue([{ text: 'x' }]),
+      };
+      const b = createBot({
+        config: fakeConfig(),
+        logger: fakeLogger(),
+        handleUpdate: vi.fn().mockResolvedValue(undefined),
+        recordUpdate: vi.fn().mockResolvedValue(true),
+        commands: {
+          switchToConversation: vi.fn().mockResolvedValue('R'),
+          switchToCoach: vi.fn().mockResolvedValue('R'),
+          switchToChallenge: vi.fn().mockResolvedValue('R'),
+          endSession: vi.fn().mockResolvedValue('R'),
+        },
+        kana: { commands: kanaCommands, audioDir: 'assets/kana-audio' },
+      });
+      return { bot: b, apiCalls: stubBotApi(b) };
+    })();
+
+    let updateId = 4400;
+    for (const entry of BOT_COMMANDS) {
+      apiCalls.length = 0;
+      updateId += 1;
+      await bot.handleUpdate(
+        commandUpdate({
+          updateId,
+          userId: ALLOWED_USER_ID,
+          messageId: updateId,
+          command: entry.command,
+        }),
+      );
+      const texts = sentTexts(apiCalls);
+      expect(texts, entry.command).not.toContain(UNKNOWN_COMMAND_REPLY);
+      expect(texts, entry.command).not.toContain(COMMAND_NOT_ENABLED_REPLY);
+    }
+  });
+
+  it('describes every command in chinese', () => {
+    for (const entry of BOT_COMMANDS) {
+      expect(entry.description, entry.command).toMatch(/[一-鿿]/);
+    }
   });
 });

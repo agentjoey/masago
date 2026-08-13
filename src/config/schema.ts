@@ -59,7 +59,9 @@ const envSchema = z.object({
   TTS_MODEL_CONVERSATION: z.string().min(1).default('speech-2.8-turbo'),
   TTS_MODEL_TEACHING: z.string().min(1).default('speech-2.8-hd'),
   TTS_MAX_CHARACTERS: z.coerce.number().int().positive().default(400),
-  MINIMAX_API_KEY: z.string().min(1),
+  // MiniMax の TTS は Token Plan の同じ鍵で通る（2026-08-14 実測）。
+  // 同じ秘密を .env に二度書くと必ずずれるため、未設定なら LLM_API_KEY を使う。
+  MINIMAX_API_KEY: z.string().min(1).optional(),
   MINIMAX_VOICE_ID: z.string().min(1),
 
   // Correction rhythm
@@ -127,7 +129,7 @@ export const configSchema = envSchema.transform((env) => ({
     modelConversation: env.TTS_MODEL_CONVERSATION,
     modelTeaching: env.TTS_MODEL_TEACHING,
     maxCharacters: env.TTS_MAX_CHARACTERS,
-    minimaxApiKey: env.MINIMAX_API_KEY,
+    minimaxApiKey: env.MINIMAX_API_KEY ?? env.LLM_API_KEY,
     minimaxVoiceId: env.MINIMAX_VOICE_ID,
   },
   correction: {

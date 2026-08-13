@@ -10,7 +10,6 @@ const REQUIRED_ENV: Record<string, string> = {
   LLM_MODEL: 'gpt-test',
   LLM_API_KEY: 'test-llm-key',
   OPENAI_API_KEY: 'test-openai-key',
-  MINIMAX_API_KEY: 'test-minimax-key',
   MINIMAX_VOICE_ID: 'test-voice-id',
   DAILY_COST_SOFT_LIMIT_USD: '1.5',
   MONTHLY_COST_SOFT_LIMIT_USD: '20',
@@ -97,5 +96,19 @@ describe('parseConfig', () => {
     expect(config.stt.model).toBe('gpt-transcribe');
     expect(config.session.userTimezone).toBe('Asia/Singapore');
     expect(config.budget.dailyCostSoftLimitUsd).toBe(1.5);
+  });
+});
+
+describe('minimax key fallback', () => {
+  // MiniMax の TTS は Token Plan の同じ鍵で通る（2026-08-14 実測）。
+  // 同じ秘密を .env に二度書かせないため、未設定なら LLM_API_KEY を使う。
+  it('falls back to LLM_API_KEY when MINIMAX_API_KEY is absent', () => {
+    const config = parseConfig(makeEnv());
+    expect(config.tts.minimaxApiKey).toBe('test-llm-key');
+  });
+
+  it('prefers an explicit MINIMAX_API_KEY when provided', () => {
+    const config = parseConfig(makeEnv({ MINIMAX_API_KEY: 'explicit-minimax' }));
+    expect(config.tts.minimaxApiKey).toBe('explicit-minimax');
   });
 });

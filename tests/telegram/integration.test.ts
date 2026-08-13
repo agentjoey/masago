@@ -26,6 +26,24 @@ let dbReachable = false;
 
 const RUN = Date.now() % 1_000_000;
 const ORCH_USER_ID = 9_100_000_000 + RUN;
+
+/**
+ * 本番の Telegram ユーザ id では絶対に走らせない。
+ *
+ * このテストは `config.telegram.allowedUserId` として更新を投げ、
+ * 出来た learner profile を後片付けで削除する。`.env` を読んだ状態だと
+ * その id は**実際の利用者**——つまり本人の学習記録を消しに行く。
+ * 今日までは空の行だったので誰も気づかなかったが、復習キューが
+ * 出来た途端に外部キーが削除を止めた。止めてくれたから助かった、では
+ * 再発する。設定を読み込む前に合成 id へ差し替える。
+ */
+const TEST_ALLOWED_USER_ID = 9_300_000_000 + RUN;
+process.env['ALLOWED_TELEGRAM_USER_ID'] = String(TEST_ALLOWED_USER_ID);
+
+/** 後片付けで触ってよい id の範囲。合成 id は必ず 90 億台。 */
+function isSyntheticUserId(telegramUserId: number): boolean {
+  return telegramUserId >= 9_000_000_000;
+}
 const trackedUpdateIds: number[] = [];
 const trackedLearnerIds: string[] = [];
 const trackedSessionIds: string[] = [];
@@ -103,9 +121,26 @@ describe.skipIf(!HAS_DB)('telegram W3 integration (real database)', () => {
           .where(inArray(schema.telegramUpdates.updateId, trackedUpdateIds));
       }
       if (learnerIds.size > 0) {
-        await db
-          .delete(schema.learnerProfiles)
+        // 二重の歯止め：合成 id 以外は何があっても消さない。
+        // 上で差し替えた前提が将来崩れても、実データは巻き込まれない。
+        const rows = await db
+          .select()
+          .from(schema.learnerProfiles)
           .where(inArray(schema.learnerProfiles.id, [...learnerIds]));
+        const deletable = rows
+          .filter((row) => isSyntheticUserId(row.telegramUserId))
+          .map((row) => row.id);
+        if (deletable.length !== rows.length) {
+          throw new Error(
+            'refusing to delete a real learner profile in teardown — ' +
+              'the test must run under a synthetic telegram user id',
+          );
+        }
+        if (deletable.length > 0) {
+          await db
+            .delete(schema.learnerProfiles)
+            .where(inArray(schema.learnerProfiles.id, deletable));
+        }
       }
     }
     await closeDb();

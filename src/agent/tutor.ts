@@ -203,9 +203,19 @@ export class TutorRequestError extends TutorError {
 }
 
 export class TutorOutputError extends TutorError {
-  constructor() {
+  /**
+   * どのフィールドが検証に落ちたか。
+   *
+   * 以前は理由を捨てていた。本番で稀に出る失敗ほど再現が難しく、
+   * 「schema validation failed」だけ残っても打つ手が無い——落ちた
+   * 瞬間の情報が唯一の手がかりなので、必ず持って上がる。
+   */
+  readonly validationErrors: string | undefined;
+
+  constructor(validationErrors?: string) {
     super('tutor llm output failed schema validation after one repair attempt');
     this.name = 'TutorOutputError';
+    this.validationErrors = validationErrors;
   }
 }
 
@@ -518,7 +528,7 @@ export function createMinimalTutor(options: MinimalTutorOptions): Tutor {
       }
 
       if (!attempt.ok) {
-        throw new TutorOutputError();
+        throw new TutorOutputError(attempt.errors);
       }
 
       // 実測（2026-08-14）：recommended が original と同一の「訂正のない issue」を

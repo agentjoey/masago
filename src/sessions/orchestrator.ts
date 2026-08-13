@@ -288,6 +288,7 @@ export async function handleIncomingMessage(
   const { turnId, reply } = await runTextTurn(
     {
       executor: deps.executor,
+      logger: deps.logger,
       ...(deps.tutor !== undefined ? { tutor: deps.tutor } : {}),
       ...(deps.corrections !== undefined
         ? { corrections: deps.corrections }

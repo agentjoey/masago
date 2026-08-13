@@ -134,8 +134,13 @@ function keyFormatWarnings(): string[] {
 }
 
 async function runStartupChecks(): Promise<void> {
-  if (!(await isFfmpegAvailable())) {
-    throw new Error('startup check failed: ffmpeg is not available on PATH');
+  // ffmpeg が要るのは音声入力の正規化だけ（OGG/opus → STT が読める形）。
+  // V2 は文字入力が主で音声入力は範囲外なので、無効なら要求しない。
+  // ここを無条件の関門にしていると、使わない機能のために起動できなくなる。
+  if (config.stt.inputEnabled && !(await isFfmpegAvailable())) {
+    throw new Error(
+      'startup check failed: VOICE_INPUT_ENABLED=true requires ffmpeg on PATH',
+    );
   }
   await db.execute(sql`select 1`);
   // 仮名は 104 個で増えない。揃っていれば一件の SELECT で戻るので、

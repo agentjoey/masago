@@ -52,7 +52,19 @@ async function send(
       ctx.logger.warn('kana audio missing', { kanaId: reply.audioKanaId, path });
       continue;
     }
-    await ctx.replyWithVoice(new InputFile(path));
+    // 音库は mp3。sendVoice は元々 OGG/opus 専用で、mp3 を受けるように
+    // なったのは後から——実機で確かめるまで通る保証は無い。
+    // 発音を聞かせることがこの機能の目的なので、形式で落ちるくらいなら
+    // 見た目が音楽プレイヤーになっても音を届ける。
+    try {
+      await ctx.replyWithVoice(new InputFile(path));
+    } catch (error) {
+      ctx.logger.warn('sendVoice rejected the file, falling back to audio', {
+        kanaId: reply.audioKanaId,
+        error,
+      });
+      await ctx.replyWithAudio(new InputFile(path));
+    }
   }
 }
 

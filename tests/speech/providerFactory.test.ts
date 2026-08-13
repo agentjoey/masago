@@ -36,6 +36,7 @@ function makeConfig(overrides?: {
       promptCacheEnabled: true,
     },
     stt: {
+      inputEnabled: false,
       provider: overrides?.sttProvider ?? 'openai',
       model: 'gpt-transcribe',
       contextHintsEnabled: false,

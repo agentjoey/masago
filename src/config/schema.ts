@@ -43,6 +43,9 @@ const envSchema = z.object({
   LLM_PROMPT_CACHE_ENABLED: envBoolean(true),
 
   // STT
+  // V2 は文字入力が主で、音声入力は範囲外（C4）。既定で無効。
+  // 有効にするときは ffmpeg が要る——OGG/opus を STT が読める形に直すため。
+  VOICE_INPUT_ENABLED: envBoolean(false),
   STT_PROVIDER: z.string().min(1).default('openai'),
   STT_MODEL: z.string().min(1).default('gpt-transcribe'),
   STT_CONTEXT_HINTS_ENABLED: envBoolean(false),
@@ -125,6 +128,7 @@ export const configSchema = envSchema.transform((env) => ({
     promptCacheEnabled: env.LLM_PROMPT_CACHE_ENABLED,
   },
   stt: {
+    inputEnabled: env.VOICE_INPUT_ENABLED,
     provider: env.STT_PROVIDER,
     model: env.STT_MODEL,
     contextHintsEnabled: env.STT_CONTEXT_HINTS_ENABLED,

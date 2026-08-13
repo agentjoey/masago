@@ -6,15 +6,19 @@ export {
 } from './llm/index.js';
 export {
   buildHintRequestText,
+  buildKnownKeysText,
   buildModePolicyText,
   buildRetryEvaluationText,
   buildSurfacingDirectiveText,
   createMinimalTutor,
   DEFAULT_MAX_TOKENS,
   HOLD_DIRECTIVE_TEXT,
+  INITIAL_KNOWLEDGE_KEYS,
   REPAIR_INSTRUCTION,
+  replyContainsCorrection,
   TUTOR_POLICY,
   TUTOR_PROVIDER_NAME,
+  TUTOR_TOOL_NAME,
   TutorError,
   TutorOutputError,
   TutorRequestError,
@@ -22,6 +26,7 @@ export {
 } from './tutor.js';
 export {
   detectedIssueSchema,
+  KNOWLEDGE_KEY_PATTERN,
   retryEvaluationSchema,
   TUTOR_OUTPUT_JSON_SCHEMA,
   tutorOutputSchema,

@@ -9,7 +9,7 @@ import {
 import type { PendingIssue } from '../../src/corrections/index.js';
 import type { ModePolicy } from '../../src/sessions/modes.js';
 import type { TutorRequest } from '../../src/sessions/voiceTurn.js';
-import { makeTextMessage, StubAnthropicClient } from './stubAnthropic.js';
+import { makeToolUseMessage, StubAnthropicClient } from './stubAnthropic.js';
 
 const MODEL = 'claude-sonnet-5';
 
@@ -43,13 +43,13 @@ const RETRY_ISSUE: PendingIssue = {
   createdAt: new Date('2026-08-01T00:00:00Z'),
 };
 
-const OK_OUTPUT = JSON.stringify({
+const OK_OUTPUT = {
   reply: { japanese: 'そうですか。', translation: null },
   detectedIssues: [],
   correctionCard: null,
   retryEvaluation: null,
   session: { continue: true },
-});
+};
 
 function userMessageOf(call: {
   messages: Anthropic.MessageParam[];
@@ -65,7 +65,7 @@ function makeTutor(): {
   tutor: ReturnType<typeof createMinimalTutor>;
   client: StubAnthropicClient;
 } {
-  const client = new StubAnthropicClient([makeTextMessage(OK_OUTPUT)]);
+  const client = new StubAnthropicClient([makeToolUseMessage(OK_OUTPUT)]);
   return {
     tutor: createMinimalTutor({ client, model: MODEL }),
     client,

@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import type { PendingIssue } from '../corrections/index.js';
+import type { KnowledgeKeyStore } from '../db/repositories/knowledgeItems.js';
 import type { HintLevel, ModePolicy } from '../sessions/modes.js';
 import type {
   Tutor,
@@ -10,11 +11,34 @@ import type { AnthropicClientLike } from './llm/types.js';
 import {
   TUTOR_OUTPUT_JSON_SCHEMA,
   tutorOutputSchema,
+  type DetectedIssueOutput,
   type TutorOutput,
 } from './schemas.js';
 
 export const TUTOR_PROVIDER_NAME = 'anthropic';
 export const DEFAULT_MAX_TOKENS = 16000;
+
+// MiniMax は output_config.format をサポートしない（黙って無視される）ため、
+// 構造化出力は強制ツール呼び出しで実現する。tool_use.input がそのまま構造化結果。
+export const TUTOR_TOOL_NAME = 'submit_tutor_turn';
+
+const TUTOR_TOOL: Anthropic.Tool = {
+  name: TUTOR_TOOL_NAME,
+  description:
+    'チューターの1ターン分の構造化応答を提出します。reply・detectedIssues・correctionCard・retryEvaluation・session をスキーマに厳密に従って含めてください。',
+  input_schema: TUTOR_OUTPUT_JSON_SCHEMA as Anthropic.Tool.InputSchema,
+};
+
+// 初期キー空間は N5 頻出の誤り類型のみ。列挙で塞がず、
+// 新しいキーは knowledge_items へ登録されて徐々に育つ。
+export const INITIAL_KNOWLEDGE_KEYS: readonly string[] = [
+  'verb_masu_past',
+  'verb_te_form',
+  'particle_ni_de',
+  'particle_wa_ga',
+  'adjective_i_negative',
+  'counter_usage',
+];
 
 export const TUTOR_POLICY = `あなたは日本人学習者のための日本語会話チューターです。学習者は中国語を母語とし、日本語は初級から中級（JLPT N5〜N3 相当）です。あなたの役割は、学習者が安心して日本語を口に出し続けられる会話相手になることです。
 
@@ -31,7 +55,7 @@ export const TUTOR_POLICY = `あなたは日本人学習者のための日本語
 
 学習者の発話に文法・語彙・助詞・活用・自然さの問題を見つけた場合は、毎ターン必ず detectedIssues に記録してください。提示のタイミングは別のシステム（Correction Scheduler）が管理し、ユーザーメッセージ内の <correction_directive> で毎ターン明示されます。
 
-- 指示が HOLD の場合：返答テキスト（reply.japanese）の中で誤りを指摘したり、訂正を促したり、推奨表現を示したりしてはいけません。検出した問題は detectedIssues にのみ記録し、correctionCard は必ず null にしてください。あなたの返答はあくまで自然な会話の継続です。
+- 指示が HOLD の場合：返答テキスト（reply.japanese）の中で、誤りの指摘・訂正・推奨表現・正しい形の例示を一切してはいけません。「正しくは〜」「自然な日本語に直すと〜」「〜ではなく〜と言います」のように誤りへ言及する表現も禁止です。学習者の発話の内容にだけ応答し、あくまで自然な会話の継続だけを返してください。検出した問題は detectedIssues にのみ記録し、correctionCard は必ず null にしてください。
 - 指示が SURFACE の場合：指定された問題だけを correctionCard にレンダリングしてください。指定されていない問題は correctionCard に含めず、detectedIssues への記録は通常どおり行ってください。指示に言い直しの要求（requestRetry）が含まれる場合は、推奨表現でもう一度言ってもらうよう促してください。reply.japanese は通常どおり会話を続ける本文です。
 
 各 issue には次を含めてください：
@@ -39,7 +63,7 @@ export const TUTOR_POLICY = `あなたは日本人学習者のための日本語
 - recommended: 正しい、またはより自然な形
 - reason: なぜそうなるかの簡潔な説明（日本語で）
 - naturalAlternative: ネイティブが同じ場面でよく使う別の自然な言い方。なければ null
-- knowledgeKey: 問題の種類を表す安定した snake_case のキー（例: verb_masu_past, particle_wa_ga, adjective_conjugation）
+- knowledgeKey: 問題の種類を表す安定した snake_case のキー。^[a-z][a-z0-9_]*$ の形式のみ許可され、空白・日本語・矢印を含む自由文は禁止です（例: verb_masu_past, particle_wa_ga, adjective_i_negative）。ユーザーメッセージ内の <known_knowledge_keys> に既知のキー一覧があります。同じ種類の誤りには必ずその一覧のキーを再利用し、一致するものが本当にない場合だけ新しいキーを作ってください
 - importance: 学習者の理解にとっての重要度（LOW / MEDIUM / HIGH）
 
 重要度の目安：
@@ -51,7 +75,7 @@ export const TUTOR_POLICY = `あなたは日本人学習者のための日本語
 
 # 出力形式
 
-出力は指定された JSON schema に厳密に従ってください。説明文やマークダウン、コードブロックは一切付けず、JSON だけを出力してください。
+応答は必ず submit_tutor_turn ツールの呼び出しで返してください。ツールの引数はスキーマに厳密に従ってください。ツールを呼ばずに本文テキストだけを返すことは禁止です。
 
 - reply.japanese: 学習者への日本語の返答本文。音声合成でそのまま読み上げられるため、記号の羅列や絵文字、URL、箇条書きは使わないでください。
 - reply.translation: 通常は null です。学習者が明示的に意味を尋ねた場合のみ、中国語での簡潔な訳を入れてください。
@@ -79,11 +103,21 @@ export const TUTOR_POLICY = `あなたは日本人学習者のための日本語
 - 学習者が以前に話した内容を覚えている振る舞いは、その内容が会話履歴に存在する場合に限ります。
 - あなたはAIであることを隠す必要はありませんが、会話の主役は常に学習者の日本語練習です。`;
 
-export const REPAIR_INSTRUCTION =
-  '直前の応答は指定された JSON schema を満たしていません。会話の内容は変えず、形式だけを修正して、schema に完全一致する JSON だけを出力してください。';
+export const REPAIR_INSTRUCTION = `直前のツール呼び出しの引数がスキーマを満たしていません。会話の内容は変えず、形式だけを修正して ${TUTOR_TOOL_NAME} をもう一度呼び出してください。特に knowledgeKey は ^[a-z][a-z0-9_]*$ の snake_case のみ許可され、空白・日本語・記号を含む自由文は使えません。`;
 
-export const HOLD_DIRECTIVE_TEXT =
-  '提示指示: HOLD。通常どおり会話を続けてください。検出した問題は detectedIssues にのみ記録し、reply.japanese の中で指摘・訂正・推奨表現の提示をしてはいけません。correctionCard は null にしてください。';
+// 実測（2026-08-14, MiniMax-M3）：モデルの既定挙動は reply 本文の中で
+// その場で訂正することである。HOLD を守らせるには禁止を具体的に列挙し、
+// 併せて「代わりに何をするか」を指示する必要がある。
+export const HOLD_DIRECTIVE_TEXT = [
+  '提示指示: HOLD。',
+  '検出した問題は detectedIssues にのみ記録してください。correctionCard は null です。',
+  '明らかな誤りがあっても、このターンでは一切指摘しません。以下はすべて禁止です：',
+  '  - 「〜に直すと」「正しくは」「〜ではなく〜です」のような訂正表現',
+  '  - 推奨表現・正しい形を reply.japanese の中に書くこと',
+  '  - 誤りを婉曲に示唆すること（「もう一度言ってみて」等も含む）',
+  '代わりに、学習者が言おうとした内容をそのまま受け取り、自然な相づちと、',
+  '話題を続ける短い質問を返してください。訂正はあとで別のターンに行います。',
+].join('\n');
 
 const CHINESE_USAGE_DIRECTIVE: Record<ModePolicy['chineseAllowed'], string> = {
   none: '中国語ポリシー: none。中国語は一切使わないでください。reply.translation は必ず null にし、説明も含めてすべて日本語で行ってください。',
@@ -182,6 +216,7 @@ export interface MinimalTutorOptions {
   maxTokens?: number;
   promptCacheEnabled?: boolean;
   policy?: string;
+  knowledgeKeys?: KnowledgeKeyStore;
 }
 
 interface AttemptSuccess {
@@ -192,7 +227,10 @@ interface AttemptSuccess {
 
 interface AttemptFailure {
   ok: false;
-  rawText?: string;
+  /** 検証に失敗した tool_use ブロック。repair の tool_result で参照する。 */
+  toolUse?: Anthropic.ToolUseBlock;
+  /** Zod の検証エラー。モデルに何を直すか具体的に伝える。 */
+  errors?: string;
 }
 
 type Attempt = AttemptSuccess | AttemptFailure;
@@ -212,7 +250,18 @@ function buildSystem(
   ];
 }
 
-function buildUserMessage(request: TutorRequest): string {
+export function buildKnownKeysText(keys: readonly string[]): string {
+  return [
+    '既知の knowledgeKey 一覧です。同じ種類の誤りには必ずこの中のキーを再利用してください。',
+    '一致するものが本当にない場合だけ、^[a-z][a-z0-9_]*$ の新しいキーを作ってください。',
+    keys.join(', '),
+  ].join('\n');
+}
+
+function buildUserMessage(
+  request: TutorRequest,
+  knownKnowledgeKeys: readonly string[],
+): string {
   const parts: string[] = [];
   if (request.modePolicy !== undefined) {
     parts.push('<mode_policy>', buildModePolicyText(request.modePolicy), '</mode_policy>');
@@ -222,6 +271,11 @@ function buildUserMessage(request: TutorRequest): string {
     `<raw_transcript>${request.rawTranscript}</raw_transcript>`,
     `<normalized_transcript>${request.normalizedTranscript}</normalized_transcript>`,
     '</learner_input>',
+  );
+  parts.push(
+    '<known_knowledge_keys>',
+    buildKnownKeysText(knownKnowledgeKeys),
+    '</known_knowledge_keys>',
   );
   if (request.surfacingDirective !== undefined) {
     parts.push(
@@ -247,15 +301,65 @@ function buildUserMessage(request: TutorRequest): string {
   return parts.join('\n');
 }
 
-function parseOutput(text: string): TutorOutput | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return undefined;
+/**
+ * 強制ツール呼び出しでは tool_use.input がそのまま構造化結果になる。
+ * 文字列ではなくオブジェクトを直接検証するため JSON.parse は不要。
+ */
+function parseToolInput(
+  input: unknown,
+): { ok: true; output: TutorOutput } | { ok: false; errors: string } {
+  const validated = tutorOutputSchema.safeParse(input);
+  if (validated.success) {
+    return { ok: true, output: validated.data };
   }
-  const validated = tutorOutputSchema.safeParse(parsed);
-  return validated.success ? validated.data : undefined;
+  const errors = validated.error.issues
+    .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+    .join('; ');
+  return { ok: false, errors };
+}
+
+/**
+ * 訂正を明示する定型表現。これらが本文にあれば訂正とみなす。
+ */
+const CORRECTION_MARKERS: readonly string[] = [
+  '正しく',
+  '正しい形',
+  '直す',
+  '直し',
+  'ではなく',
+  '間違',
+  '誤り',
+  'と言います',
+  'と言うほうが',
+  'が正解',
+  '訂正',
+];
+
+/**
+ * HOLD 時に reply.japanese へ訂正が漏れていないかを調べる。
+ *
+ * 実測で判明した落とし穴：recommended の部分一致だけで判定すると誤検出する。
+ * 例）「読みますました」→ recommended「読みました」に対し、本文が
+ * 「どんな本を読みましたか」という自然な問い返しでも一致してしまう。
+ * 一般的な活用形は通常の会話文にそのまま現れるため、部分一致は使えない。
+ *
+ * そこで二つの信号で判定する：
+ *   1. 訂正の定型表現が含まれる
+ *   2. 学習者の誤った原形をそのまま引用している（誤りを指し示す強い兆候）
+ *
+ * プログラム側は検出までで本文の改変はしない。改変すると会話が壊れるため、
+ * 対処はプロンプト側で行い、ここは計測と監視のために用いる（W11 §3）。
+ */
+export function replyContainsCorrection(
+  replyText: string,
+  issues: readonly Pick<DetectedIssueOutput, 'recommended' | 'original'>[],
+): boolean {
+  if (CORRECTION_MARKERS.some((marker) => replyText.includes(marker))) {
+    return true;
+  }
+  return issues.some(
+    (issue) => issue.original.length >= 3 && replyText.includes(issue.original),
+  );
 }
 
 function sumUsage(
@@ -298,25 +402,68 @@ export function createMinimalTutor(options: MinimalTutorOptions): Tutor {
         max_tokens: maxTokens,
         system,
         messages,
-        output_config: {
-          format: { type: 'json_schema', schema: TUTOR_OUTPUT_JSON_SCHEMA },
-        },
+        tools: [TUTOR_TOOL],
+        // 強制呼び出し。MiniMax は output_config.format を黙って無視するため、
+        // スキーマ強制はツールの input_schema に委ねる。
+        tool_choice: { type: 'tool', name: TUTOR_TOOL_NAME },
       });
     } catch {
       throw new TutorRequestError();
     }
-    const textBlock = response.content.find((block) => block.type === 'text');
-    if (textBlock === undefined) {
+    // 応答には text ブロックと tool_use ブロックが同時に含まれうる（実測）。
+    // content[0] を仮定せず tool_use を探す。
+    const toolUse = response.content.find(
+      (block): block is Anthropic.ToolUseBlock =>
+        block.type === 'tool_use' && block.name === TUTOR_TOOL_NAME,
+    );
+    if (toolUse === undefined) {
       return { attempt: { ok: false }, response };
     }
-    const output = parseOutput(textBlock.text);
-    if (output === undefined) {
+    const parsed = parseToolInput(toolUse.input);
+    if (!parsed.ok) {
       return {
-        attempt: { ok: false, rawText: textBlock.text },
+        attempt: { ok: false, toolUse, errors: parsed.errors },
         response,
       };
     }
-    return { attempt: { ok: true, output, response }, response };
+    return { attempt: { ok: true, output: parsed.output, response }, response };
+  }
+
+  // 既知キーの提示と新規キーの登録は補助処理であり、失敗でターンを落とさない。
+  // 登録は (type, key) 一意制約で冪等なので、次ターンに自然に再試行される。
+  async function listKnownKeys(): Promise<readonly string[]> {
+    const store = options.knowledgeKeys;
+    if (store === undefined) {
+      return INITIAL_KNOWLEDGE_KEYS;
+    }
+    try {
+      const stored = await store.listKeys();
+      return [...new Set([...INITIAL_KNOWLEDGE_KEYS, ...stored])];
+    } catch {
+      return INITIAL_KNOWLEDGE_KEYS;
+    }
+  }
+
+  async function registerNewKeys(
+    output: TutorOutput,
+    knownKeys: readonly string[],
+  ): Promise<void> {
+    const store = options.knowledgeKeys;
+    if (store === undefined) {
+      return;
+    }
+    const known = new Set(knownKeys);
+    const newKeys = [
+      ...new Set(output.detectedIssues.map((issue) => issue.knowledgeKey)),
+    ].filter((key) => !known.has(key));
+    if (newKeys.length === 0) {
+      return;
+    }
+    try {
+      await store.registerKeys(newKeys);
+    } catch {
+      // 上記のとおり、登録失敗はターンを落とさない。
+    }
   }
 
   return {
@@ -324,9 +471,16 @@ export function createMinimalTutor(options: MinimalTutorOptions): Tutor {
     model: options.model,
     async respond(request: TutorRequest): Promise<TutorResponse> {
       const system = buildSystem(policy, cacheEnabled);
+      // 呼び出し側が既知キーを渡してきた場合はそれも既知として扱う。
+      const knownKeys = [
+        ...new Set([
+          ...(await listKnownKeys()),
+          ...(request.knownKnowledgeKeys ?? []),
+        ]),
+      ];
       const responses: Anthropic.Message[] = [];
       const baseMessages: Anthropic.MessageParam[] = [
-        { role: 'user', content: buildUserMessage(request) },
+        { role: 'user', content: buildUserMessage(request, knownKeys) },
       ];
 
       const first = await callOnce(system, baseMessages);
@@ -336,17 +490,26 @@ export function createMinimalTutor(options: MinimalTutorOptions): Tutor {
       let attempt = first.attempt;
 
       if (!attempt.ok) {
-        const repairMessages: Anthropic.MessageParam[] = [
-          ...baseMessages,
-          {
-            role: 'assistant',
-            content:
-              attempt.ok === false && attempt.rawText !== undefined
-                ? attempt.rawText
-                : '(empty response)',
-          },
-          { role: 'user', content: REPAIR_INSTRUCTION },
-        ];
+        // ツール呼び出しの失敗は tool_result で差し戻すのが Anthropic 系の
+        // プロトコル。tool_use が返らなかった場合だけ通常のテキストで促す。
+        const repairMessages: Anthropic.MessageParam[] =
+          attempt.toolUse !== undefined
+            ? [
+                ...baseMessages,
+                { role: 'assistant', content: [attempt.toolUse] },
+                {
+                  role: 'user',
+                  content: [
+                    {
+                      type: 'tool_result' as const,
+                      tool_use_id: attempt.toolUse.id,
+                      is_error: true,
+                      content: `${REPAIR_INSTRUCTION}\n検証エラー: ${attempt.errors ?? '(不明)'}`,
+                    },
+                  ],
+                },
+              ]
+            : [...baseMessages, { role: 'user', content: REPAIR_INSTRUCTION }];
         const second = await callOnce(system, repairMessages);
         if (second.response !== undefined) {
           responses.push(second.response);
@@ -358,6 +521,17 @@ export function createMinimalTutor(options: MinimalTutorOptions): Tutor {
         throw new TutorOutputError();
       }
 
+      // 実測（2026-08-14）：recommended が original と同一の「訂正のない issue」を
+      // 返すことがある。そのまま通すと Error Bank に誤りでないものが溜まり、
+      // §3.3 の mastery を歪めるため、プログラム側で落とす。
+      const detectedIssues = attempt.output.detectedIssues.filter(
+        (issue: DetectedIssueOutput) => issue.recommended !== issue.original,
+      );
+
+      // 新しく現れた knowledgeKey を登録する。§3.3 の mastery は知識項目ごとの
+      // 集計なので、キーが登録されないと以降のターンで再利用させられない。
+      await registerNewKeys(attempt.output, knownKeys);
+
       const correctionCard =
         request.surfacingDirective?.action === 'HOLD'
           ? null
@@ -366,7 +540,7 @@ export function createMinimalTutor(options: MinimalTutorOptions): Tutor {
       return {
         replyText: attempt.output.reply.japanese,
         ttsText: attempt.output.reply.japanese,
-        detectedIssues: attempt.output.detectedIssues,
+        detectedIssues,
         correctionCard,
         retryEvaluation: attempt.output.retryEvaluation,
         provider,

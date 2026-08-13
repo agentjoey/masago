@@ -3,6 +3,7 @@ import type { AnthropicClientLike } from './types.js';
 
 export interface AnthropicClientOptions {
   apiKey: string;
+  baseUrl?: string;
   maxRetries?: number;
   timeoutMs?: number;
 }
@@ -12,6 +13,7 @@ export function createAnthropicClient(
 ): AnthropicClientLike {
   return new Anthropic({
     apiKey: options.apiKey,
+    ...(options.baseUrl !== undefined ? { baseURL: options.baseUrl } : {}),
     ...(options.maxRetries !== undefined
       ? { maxRetries: options.maxRetries }
       : {}),

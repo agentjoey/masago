@@ -1,11 +1,15 @@
 import { z } from 'zod';
 
+// 安定したキーであることを強制する。自由文（空白・日本語・矢印など）を拒否し、
+// mastery を知識項目ごとに集計できるようにする。
+export const KNOWLEDGE_KEY_PATTERN = /^[a-z][a-z0-9_]*$/;
+
 export const detectedIssueSchema = z.object({
   original: z.string().min(1),
   recommended: z.string().min(1),
   reason: z.string().nullable(),
   naturalAlternative: z.string().nullable(),
-  knowledgeKey: z.string().min(1),
+  knowledgeKey: z.string().regex(KNOWLEDGE_KEY_PATTERN),
   importance: z.enum(['LOW', 'MEDIUM', 'HIGH']),
 });
 
@@ -50,7 +54,7 @@ export const TUTOR_OUTPUT_JSON_SCHEMA: Record<string, unknown> = {
           recommended: { type: 'string' },
           reason: { type: ['string', 'null'] },
           naturalAlternative: { type: ['string', 'null'] },
-          knowledgeKey: { type: 'string' },
+          knowledgeKey: { type: 'string', pattern: '^[a-z][a-z0-9_]*$' },
           importance: { type: 'string', enum: ['LOW', 'MEDIUM', 'HIGH'] },
         },
         required: [

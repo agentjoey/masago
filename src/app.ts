@@ -4,6 +4,7 @@ import { createAnthropicClient, createMinimalTutor } from './agent/index.js';
 import { config } from './config/index.js';
 import { createCorrectionTurnHooks } from './corrections/index.js';
 import { closeDb, db, telegramUpdatesRepo } from './db/index.js';
+import { createKnowledgeKeyStore } from './db/repositories/knowledgeItems.js';
 import { createLogger } from './observability/index.js';
 import {
   createCommandHandlers,
@@ -48,10 +49,14 @@ process.on('SIGTERM', () => void shutdown('SIGTERM'));
 const { stt, tts } = createSpeechProviders(config);
 
 const tutor: Tutor = createMinimalTutor({
-  client: createAnthropicClient({ apiKey: config.llm.apiKey }),
+  client: createAnthropicClient({
+    apiKey: config.llm.apiKey,
+    baseUrl: config.llm.baseUrl,
+  }),
   model: config.llm.model,
   provider: config.llm.provider,
   promptCacheEnabled: config.llm.promptCacheEnabled,
+  knowledgeKeys: createKnowledgeKeyStore(db),
 });
 
 const usageRecorder = createRecorder({ executor: db, logger });

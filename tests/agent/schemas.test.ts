@@ -54,6 +54,42 @@ describe('tutorOutputSchema', () => {
     ).toBe(false);
   });
 
+  it('rejects free-text knowledgeKey (spaces, Japanese, arrows) so mastery can aggregate', () => {
+    const issue = {
+      original: '映画を見るました',
+      recommended: '映画を見ました',
+      reason: null,
+      naturalAlternative: null,
+      importance: 'HIGH' as const,
+    };
+    // 実測（2026-08-14, MiniMax-M3）：モデルは説明文をキーとして返しがち
+    const freeTextKeys = [
+      '動詞の過去形：見る → 見ました',
+      'verb masu past',
+      'Verb_masu_past',
+      'verb-masu-past',
+      'verb_masu_past。',
+      '見るました→見ました',
+      '_verb_masu_past',
+      '1verb_masu_past',
+    ];
+    for (const knowledgeKey of freeTextKeys) {
+      const parsed = tutorOutputSchema.safeParse({
+        ...MINIMAL_VALID,
+        detectedIssues: [{ ...issue, knowledgeKey }],
+      });
+      expect(parsed.success, `should reject: ${knowledgeKey}`).toBe(false);
+    }
+    const stableKeys = ['verb_masu_past', 'particle_ni_de', 'a', 'x1_2'];
+    for (const knowledgeKey of stableKeys) {
+      const parsed = tutorOutputSchema.safeParse({
+        ...MINIMAL_VALID,
+        detectedIssues: [{ ...issue, knowledgeKey }],
+      });
+      expect(parsed.success, `should accept: ${knowledgeKey}`).toBe(true);
+    }
+  });
+
   it('json schema handed to the API mirrors the zod contract', () => {
     expect(TUTOR_OUTPUT_JSON_SCHEMA).toMatchObject({
       type: 'object',
@@ -65,6 +101,17 @@ describe('tutorOutputSchema', () => {
         'session',
       ],
       additionalProperties: false,
+    });
+    // knowledgeKey の pattern も API 側の input_schema に乗せる
+    const issues = TUTOR_OUTPUT_JSON_SCHEMA['properties'] as Record<
+      string,
+      unknown
+    >;
+    const detected = issues['detectedIssues'] as Record<string, unknown>;
+    const item = detected['items'] as Record<string, unknown>;
+    const itemProps = item['properties'] as Record<string, unknown>;
+    expect(itemProps['knowledgeKey']).toMatchObject({
+      pattern: '^[a-z][a-z0-9_]*$',
     });
   });
 });

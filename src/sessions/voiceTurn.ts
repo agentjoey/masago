@@ -58,6 +58,8 @@ export interface TutorRequest {
   retryEvaluationRequest?: RetryEvaluationPreparation;
   modePolicy?: ModePolicy;
   hint?: TutorHintRequest;
+  /** 既知の knowledgeKey。モデルに再利用させ、キーの揺れを防ぐ（§3.3）。 */
+  knownKnowledgeKeys?: readonly string[];
 }
 
 export interface TutorRetryEvaluation {

@@ -36,6 +36,7 @@ const envSchema = z.object({
 
   // LLM
   LLM_PROVIDER: z.string().min(1),
+  LLM_BASE_URL: z.string().min(1).default('https://api.anthropic.com'),
   LLM_MODEL: z.string().min(1),
   LLM_API_KEY: z.string().min(1),
   LLM_MAX_CONTEXT_TURNS: z.coerce.number().int().min(1).default(12),
@@ -103,6 +104,7 @@ export const configSchema = envSchema.transform((env) => ({
   },
   llm: {
     provider: env.LLM_PROVIDER,
+    baseUrl: env.LLM_BASE_URL,
     model: env.LLM_MODEL,
     apiKey: env.LLM_API_KEY,
     maxContextTurns: env.LLM_MAX_CONTEXT_TURNS,

@@ -28,8 +28,9 @@ function makeConfig(overrides?: {
       connectionTimeoutMs: 10_000,
     },
     llm: {
-      provider: 'anthropic',
-      model: 'claude-sonnet-5',
+      provider: 'minimax',
+      baseUrl: 'https://api.minimax.io/anthropic',
+      model: 'MiniMax-M3',
       apiKey: 'llm-key',
       maxContextTurns: 12,
       promptCacheEnabled: true,

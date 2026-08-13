@@ -25,7 +25,7 @@ import {
 import type { TurnStatus } from '../../src/sessions/turnStateMachine.js';
 import { createVoiceDownloader } from '../../src/telegram/voice.js';
 import type { UsageRecordInput } from '../../src/usage/types.js';
-import { makeTextMessage, StubAnthropicClient } from '../agent/stubAnthropic.js';
+import { makeToolUseMessage, StubAnthropicClient } from '../agent/stubAnthropic.js';
 
 const RAW_TRANSCRIPT = '昨日友達と映画を見るました';
 const NORMALIZED_TRANSCRIPT = '昨日、友達と映画を見ました';
@@ -550,13 +550,15 @@ describe('voiceTurn pipeline', () => {
   });
 
   it('runs a full voice turn to COMPLETED with the real tutor and a stubbed Anthropic client', async () => {
-    const validOutput = JSON.stringify({
+    const validOutput = {
       reply: { japanese: TUTOR_REPLY, translation: null },
       detectedIssues: [],
+      correctionCard: null,
+      retryEvaluation: null,
       session: { continue: true },
-    });
+    };
     const anthropic = new StubAnthropicClient([
-      makeTextMessage(validOutput, {
+      makeToolUseMessage(validOutput, {
         id: 'msg_full_turn',
         inputTokens: 1300,
         outputTokens: 60,
@@ -584,7 +586,9 @@ describe('voiceTurn pipeline', () => {
     const params = anthropic.calls[0];
     expect(params?.model).toBe('claude-sonnet-5');
     expect(params).not.toHaveProperty('temperature');
-    expect(params?.output_config?.format?.type).toBe('json_schema');
+    // 構造化出力は強制ツール呼び出しで実現する（MiniMax は output_config 非対応）
+    expect(params).not.toHaveProperty('output_config');
+    expect(params?.tool_choice).toMatchObject({ type: 'tool' });
 
     const llmUsage = spies.recordUsage.mock.calls
       .map((call) => call[0] as UsageRecordInput)

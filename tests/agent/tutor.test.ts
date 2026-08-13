@@ -1,16 +1,22 @@
+import type Anthropic from '@anthropic-ai/sdk';
 import { describe, expect, it } from 'vitest';
 import {
   createMinimalTutor,
   REPAIR_INSTRUCTION,
+  TUTOR_TOOL_NAME,
   TutorOutputError,
   TutorRequestError,
 } from '../../src/agent/index.js';
 import type { TutorRequest } from '../../src/sessions/voiceTurn.js';
-import { makeTextMessage, StubAnthropicClient } from './stubAnthropic.js';
+import {
+  makeTextMessage,
+  makeToolUseMessage,
+  StubAnthropicClient,
+} from './stubAnthropic.js';
 
 const MODEL = 'claude-sonnet-5';
 
-const VALID_OUTPUT = JSON.stringify({
+const VALID_OUTPUT = {
   reply: { japanese: '映画を見ましたね！面白かったですか？', translation: null },
   detectedIssues: [
     {
@@ -25,7 +31,9 @@ const VALID_OUTPUT = JSON.stringify({
   correctionCard: null,
   retryEvaluation: null,
   session: { continue: true },
-});
+};
+
+const INVALID_OUTPUT = { reply: { japanese: '' }, detectedIssues: [] };
 
 const REQUEST: TutorRequest = {
   rawTranscript: '昨日友達と映画を見るました',
@@ -43,7 +51,7 @@ function lastMessageRole(call: { messages: Array<{ role: string }> }): string {
 describe('createMinimalTutor', () => {
   it('returns the japanese reply and maps all four usage fields', async () => {
     const client = new StubAnthropicClient([
-      makeTextMessage(VALID_OUTPUT, {
+      makeToolUseMessage(VALID_OUTPUT, {
         id: 'msg_abc123',
         inputTokens: 1200,
         outputTokens: 80,
@@ -68,8 +76,8 @@ describe('createMinimalTutor', () => {
     });
   });
 
-  it('never sends sampling parameters (temperature/top_p/top_k 400 on Sonnet 5)', async () => {
-    const client = new StubAnthropicClient([makeTextMessage(VALID_OUTPUT)]);
+  it('never sends sampling parameters (temperature/top_p/top_k)', async () => {
+    const client = new StubAnthropicClient([makeToolUseMessage(VALID_OUTPUT)]);
     const tutor = createMinimalTutor({ client, model: MODEL });
 
     await tutor.respond(REQUEST);
@@ -83,8 +91,8 @@ describe('createMinimalTutor', () => {
 
   it('never uses assistant prefill: the last message is always a user turn', async () => {
     const client = new StubAnthropicClient([
-      makeTextMessage('not json at all'),
-      makeTextMessage(VALID_OUTPUT),
+      makeToolUseMessage(INVALID_OUTPUT),
+      makeToolUseMessage(VALID_OUTPUT),
     ]);
     const tutor = createMinimalTutor({ client, model: MODEL });
 
@@ -96,16 +104,19 @@ describe('createMinimalTutor', () => {
     }
   });
 
-  it('uses output_config.format json_schema, never the deprecated output_format', async () => {
-    const client = new StubAnthropicClient([makeTextMessage(VALID_OUTPUT)]);
+  it('forces submit_tutor_turn via tools + tool_choice and never sends output_config', async () => {
+    const client = new StubAnthropicClient([makeToolUseMessage(VALID_OUTPUT)]);
     const tutor = createMinimalTutor({ client, model: MODEL });
 
     await tutor.respond(REQUEST);
 
     const params = client.calls[0];
     expect(params).toBeDefined();
-    expect(params?.output_config?.format?.type).toBe('json_schema');
-    expect(params?.output_config?.format?.schema).toMatchObject({
+    expect(params?.tools).toHaveLength(1);
+    // ToolUnion には input_schema を持たない変種があるため、カスタムツールへ絞る
+    const tool = params?.tools?.[0] as Anthropic.Tool | undefined;
+    expect(tool?.name).toBe(TUTOR_TOOL_NAME);
+    expect(tool?.input_schema).toMatchObject({
       type: 'object',
       required: [
         'reply',
@@ -115,13 +126,32 @@ describe('createMinimalTutor', () => {
         'session',
       ],
     });
+    expect(params?.tool_choice).toMatchObject({
+      type: 'tool',
+      name: TUTOR_TOOL_NAME,
+    });
+    expect(params).not.toHaveProperty('output_config');
     expect(params).not.toHaveProperty('output_format');
+  });
+
+  it('reads the tool_use block even when a text block precedes it', async () => {
+    const message = makeToolUseMessage(VALID_OUTPUT);
+    message.content = [
+      { type: 'text', text: '補足のテキスト', citations: null },
+      ...message.content,
+    ];
+    const client = new StubAnthropicClient([message]);
+    const tutor = createMinimalTutor({ client, model: MODEL });
+
+    const response = await tutor.respond(REQUEST);
+
+    expect(response.replyText).toBe('映画を見ましたね！面白かったですか？');
   });
 
   it('marks the first system block cacheable and keeps the system prefix byte-identical across calls', async () => {
     const client = new StubAnthropicClient([
-      makeTextMessage(VALID_OUTPUT),
-      makeTextMessage(VALID_OUTPUT),
+      makeToolUseMessage(VALID_OUTPUT),
+      makeToolUseMessage(VALID_OUTPUT),
     ]);
     const tutor = createMinimalTutor({ client, model: MODEL });
 
@@ -144,7 +174,7 @@ describe('createMinimalTutor', () => {
   });
 
   it('omits cache_control when prompt caching is disabled', async () => {
-    const client = new StubAnthropicClient([makeTextMessage(VALID_OUTPUT)]);
+    const client = new StubAnthropicClient([makeToolUseMessage(VALID_OUTPUT)]);
     const tutor = createMinimalTutor({
       client,
       model: MODEL,
@@ -158,8 +188,8 @@ describe('createMinimalTutor', () => {
     expect(firstBlock).not.toHaveProperty('cache_control');
   });
 
-  it('does not send thinking or budget_tokens (removed on Sonnet 5)', async () => {
-    const client = new StubAnthropicClient([makeTextMessage(VALID_OUTPUT)]);
+  it('does not send thinking or budget_tokens', async () => {
+    const client = new StubAnthropicClient([makeToolUseMessage(VALID_OUTPUT)]);
     const tutor = createMinimalTutor({ client, model: MODEL });
 
     await tutor.respond(REQUEST);
@@ -169,13 +199,13 @@ describe('createMinimalTutor', () => {
     expect(JSON.stringify(params)).not.toContain('budget_tokens');
   });
 
-  it('repairs once on invalid output: same system prefix, assistant turn echoed back, then succeeds', async () => {
+  it('repairs an invalid tool_use input via tool_result with the validation errors, then succeeds', async () => {
     const client = new StubAnthropicClient([
-      makeTextMessage('{"reply": "broken"', {
+      makeToolUseMessage(INVALID_OUTPUT, {
         inputTokens: 1000,
         outputTokens: 20,
       }),
-      makeTextMessage(VALID_OUTPUT, {
+      makeToolUseMessage(VALID_OUTPUT, {
         inputTokens: 1100,
         outputTokens: 80,
         cacheReadInputTokens: 1000,
@@ -193,7 +223,15 @@ describe('createMinimalTutor', () => {
     const roles = repairCall?.messages.map((m) => m.role);
     expect(roles).toEqual(['user', 'assistant', 'user']);
     const repairUser = repairCall?.messages[2];
-    expect(repairUser?.content).toBe(REPAIR_INSTRUCTION);
+    const repairContent = Array.isArray(repairUser?.content)
+      ? repairUser.content[0]
+      : undefined;
+    expect(repairContent).toMatchObject({
+      type: 'tool_result',
+      tool_use_id: 'toolu_stub_1',
+      is_error: true,
+    });
+    expect(JSON.stringify(repairContent)).toContain(REPAIR_INSTRUCTION);
 
     expect(response.replyText).toBe('映画を見ましたね！面白かったですか？');
     expect(response.usage.inputTokens).toBe(2100);
@@ -203,10 +241,8 @@ describe('createMinimalTutor', () => {
 
   it('degrades with TutorOutputError when the repair attempt still fails schema validation', async () => {
     const client = new StubAnthropicClient([
-      makeTextMessage('not json'),
-      makeTextMessage(
-        JSON.stringify({ reply: { japanese: '' }, detectedIssues: [] }),
-      ),
+      makeToolUseMessage(INVALID_OUTPUT),
+      makeToolUseMessage(INVALID_OUTPUT),
     ]);
     const tutor = createMinimalTutor({ client, model: MODEL });
 
@@ -216,12 +252,11 @@ describe('createMinimalTutor', () => {
     expect(client.calls).toHaveLength(2);
   });
 
-  it('treats a response without a text block as invalid output and repairs', async () => {
-    const noText = makeTextMessage('');
-    noText.content = [];
+  it('treats a response without a tool_use block as invalid output and repairs', async () => {
+    const noToolUse = makeTextMessage('ツールを呼びませんでした');
     const client = new StubAnthropicClient([
-      noText,
-      makeTextMessage(VALID_OUTPUT),
+      noToolUse,
+      makeToolUseMessage(VALID_OUTPUT),
     ]);
     const tutor = createMinimalTutor({ client, model: MODEL });
 
@@ -243,5 +278,34 @@ describe('createMinimalTutor', () => {
     expect(error).toBeInstanceOf(TutorRequestError);
     expect((error as Error).message).not.toContain(secret);
     expect(JSON.stringify(error)).not.toContain(secret);
+  });
+});
+
+describe('vacuous issue filtering', () => {
+  // 実 API 検証（2026-08-14）で観測：recommended が original と同一の
+  // 「訂正のない issue」が返ることがある。Error Bank に誤りでないものが
+  // 溜まると §3.3 の mastery が歪むため、プログラム側で落とす。
+  it('drops issues whose recommended equals original', async () => {
+    const withVacuous = {
+      ...VALID_OUTPUT,
+      detectedIssues: [
+        {
+          original: '図書館へ行って',
+          recommended: '図書館へ行って',
+          reason: null,
+          naturalAlternative: null,
+          knowledgeKey: 'verb_te_form',
+          importance: 'LOW',
+        },
+        VALID_OUTPUT.detectedIssues[0],
+      ],
+    };
+    const client = new StubAnthropicClient([makeToolUseMessage(withVacuous)]);
+    const tutor = createMinimalTutor({ client, model: MODEL });
+
+    const response = await tutor.respond(REQUEST);
+
+    expect(response.detectedIssues ?? []).toHaveLength(1);
+    expect((response.detectedIssues ?? [])[0]?.knowledgeKey).toBe('verb_masu_past');
   });
 });

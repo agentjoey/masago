@@ -72,6 +72,7 @@ export async function enqueueNew(
         knowledgeItemId,
         eventType: 'INTRODUCED' as const,
         dedupeKey: `introduce:${learnerId}:${knowledgeItemId}`,
+        createdAt: now,
       })),
     );
   }
@@ -134,6 +135,9 @@ export async function applyReview(
       eventType: eventTypeOf(outcome),
       // 同じ項目を同じ瞬間に二度採点することは無いので、これで一意。
       dedupeKey: `review:${learnerId}:${knowledgeItemId}:${now.toISOString()}`,
+      // 事件の時刻は**答えた時刻**にする。DB の既定値（挿入時刻）に任せると、
+      // 後から遡って計算し直すときに実際とずれる（§3.3）。
+      createdAt: now,
       evidence: {
         rating,
         reps: state.reps,

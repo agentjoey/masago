@@ -399,3 +399,52 @@ describe.skipIf(!HAS_DB)('learning events (§3.3)', () => {
     ).toBeLessThanOrEqual(1);
   });
 });
+
+describe.skipIf(!HAS_DB)('answer history for the weekly view', () => {
+  it(
+    'returns the timestamps of answers, not introductions',
+    { timeout: 120000 },
+    async () => {
+      const { db, service } = need();
+      const repo = await import('../../src/db/repositories/learningEvents.js');
+      const itemId = created.itemIds[0];
+      if (itemId === undefined) throw new Error('missing item');
+
+      const since = new Date('2027-07-01T00:00:00Z');
+      const before = await repo.answerTimestampsSince(
+        db,
+        created.learnerId,
+        since,
+      );
+
+      await service.applyReview(
+        db,
+        created.learnerId,
+        itemId,
+        { kind: 'CORRECT', hinted: false, inputMode: 'ROMAJI' },
+        new Date('2027-07-02T09:00:00Z'),
+        RETENTION,
+      );
+
+      const after = await repo.answerTimestampsSince(
+        db,
+        created.learnerId,
+        since,
+      );
+      expect(after.length).toBe(before.length + 1);
+      for (const at of after) {
+        expect(at).toBeInstanceOf(Date);
+        expect(at.getTime()).toBeGreaterThanOrEqual(since.getTime());
+      }
+    },
+  );
+
+  it('ignores answers older than the window', { timeout: 120000 }, async () => {
+    const { db } = need();
+    const repo = await import('../../src/db/repositories/learningEvents.js');
+    const far = new Date('2099-01-01T00:00:00Z');
+    expect(await repo.answerTimestampsSince(db, created.learnerId, far)).toEqual(
+      [],
+    );
+  });
+});

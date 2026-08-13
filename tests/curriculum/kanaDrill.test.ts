@@ -10,6 +10,7 @@ import {
 import { isCorrectAnswer } from '../../src/curriculum/quiz.js';
 import { VOCAB_N5_BY_ID } from '../../src/curriculum/vocabN5.js';
 import {
+  renderActivity,
   renderCost,
   renderDaily,
   renderFullProgress,
@@ -17,6 +18,7 @@ import {
   renderQuestion,
   renderToday,
   renderWrong,
+  streakOf,
 } from '../../src/curriculum/render.js';
 import { KANA, KANA_BY_ID, type Kana } from '../../src/curriculum/kana.js';
 
@@ -432,5 +434,80 @@ describe('renderDaily', () => {
     const text = renderDaily(base);
     expect(text).toContain('46/104');
     expect(text).toContain('10/671');
+  });
+});
+
+describe('activity and streak', () => {
+  const dayBefore = (key: string, back: number): string => {
+    const [y, m, d] = key.split('-').map((p) => Number.parseInt(p, 10));
+    const at = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, (d ?? 1) - back));
+    return `${String(at.getUTCFullYear())}-${String(at.getUTCMonth() + 1).padStart(2, '0')}-${String(at.getUTCDate()).padStart(2, '0')}`;
+  };
+
+  it('shows which days were practised at a glance', () => {
+    const text = renderActivity({
+      days: [
+        { day: '2026-08-08', count: 0 },
+        { day: '2026-08-09', count: 5 },
+        { day: '2026-08-10', count: 20 },
+        { day: '2026-08-11', count: 0 },
+        { day: '2026-08-12', count: 12 },
+        { day: '2026-08-13', count: 8 },
+        { day: '2026-08-14', count: 3 },
+      ],
+      streak: 3,
+    });
+    expect(text).toContain('· ▪ ■ · ■ ▪ ▪');
+    expect(text).toContain('共 48 题');
+    expect(text).toContain('连续 3 天');
+  });
+
+  it('does not brag about a streak of one', () => {
+    expect(
+      renderActivity({ days: [{ day: '2026-08-14', count: 2 }], streak: 1 }),
+    ).not.toContain('连续');
+  });
+
+  it('counts a streak ending today', () => {
+    const counts = new Map([
+      ['2026-08-12', 5],
+      ['2026-08-13', 3],
+      ['2026-08-14', 7],
+    ]);
+    expect(streakOf(counts, '2026-08-14', dayBefore)).toBe(3);
+  });
+
+  // 夜にまとめてやる人の連続を、日中に見ただけで 0 に見せない。
+  it('still counts the streak before today’s practice', () => {
+    const counts = new Map([
+      ['2026-08-12', 5],
+      ['2026-08-13', 3],
+    ]);
+    expect(streakOf(counts, '2026-08-14', dayBefore)).toBe(2);
+  });
+
+  it('breaks the streak on a missed day', () => {
+    const counts = new Map([
+      ['2026-08-10', 5],
+      ['2026-08-11', 5],
+      ['2026-08-13', 3],
+      ['2026-08-14', 7],
+    ]);
+    expect(streakOf(counts, '2026-08-14', dayBefore)).toBe(2);
+  });
+
+  // 二週間前の連続を今日の連続として見せない。
+  it('is zero when nothing was done recently', () => {
+    const counts = new Map([['2026-07-01', 30]]);
+    expect(streakOf(counts, '2026-08-14', dayBefore)).toBe(0);
+  });
+
+  it('crosses a month boundary', () => {
+    const counts = new Map([
+      ['2026-07-30', 4],
+      ['2026-07-31', 4],
+      ['2026-08-01', 4],
+    ]);
+    expect(streakOf(counts, '2026-08-01', dayBefore)).toBe(3);
   });
 });

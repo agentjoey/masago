@@ -367,3 +367,49 @@ export function renderWelcome(returning: boolean): string {
     '现在就可以发 /kana 开始第一课。',
   ].join('\n');
 }
+
+export interface ActivityView {
+  /** 直近 7 日分（古い順）。`[{ day: '2026-08-08', count: 12 }, …]` */
+  readonly days: readonly { day: string; count: number }[];
+  readonly streak: number;
+}
+
+/**
+ * 直近一週間の活動。
+ *
+ * 数字を並べるより、やった日と休んだ日が一目で分かるほうが続く。
+ * 連続日数は「今日か昨日で終わっている連なり」だけを数える——
+ * 二週間前に 10 日続けた記録を今日の連続として見せても意味が無い。
+ */
+export function renderActivity(view: ActivityView): string {
+  const strip = view.days
+    .map((d) => (d.count === 0 ? '·' : d.count < 10 ? '▪' : '■'))
+    .join(' ');
+  const total = view.days.reduce((sum, d) => sum + d.count, 0);
+  const lines = [`最近 7 天　${strip}`, `  共 ${String(total)} 题`];
+  if (view.streak > 1) {
+    lines.push(`  连续 ${String(view.streak)} 天 🔥`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * 連続日数。今日から遡って、答えた日が途切れるまで数える。
+ *
+ * 今日まだ答えていない場合は昨日から数える——夜にまとめてやる人の
+ * 連続を、日中に見ただけで 0 に見せない。
+ */
+export function streakOf(
+  counts: ReadonlyMap<string, number>,
+  todayKey: string,
+  dayKeyBefore: (key: string, back: number) => string,
+): number {
+  let streak = 0;
+  const startedToday = (counts.get(todayKey) ?? 0) > 0;
+  for (let back = startedToday ? 0 : 1; back < 400; back += 1) {
+    const key = dayKeyBefore(todayKey, back);
+    if ((counts.get(key) ?? 0) > 0) streak += 1;
+    else break;
+  }
+  return streak;
+}

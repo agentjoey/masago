@@ -1,6 +1,7 @@
 import { KANA_BY_ID, kanaOfKey } from '../curriculum/kana.js';
 import {
   renderCorrect,
+  renderActivity,
   renderCost,
   renderDaily,
   renderDrillFinished,
@@ -114,6 +115,11 @@ export interface KanaCommandDeps {
   readonly backlogThreshold: number;
   /** 費用の集計。DB とタイムゾーンは呼び出し側が閉じ込める。 */
   readonly costSummary?: (now: Date) => Promise<CostView>;
+  /** 直近一週間の活動。無ければ /progress は進度だけを出す。 */
+  readonly activity?: (
+    learnerId: string,
+    now: Date,
+  ) => Promise<{ days: { day: string; count: number }[]; streak: number }>;
   readonly dailyLimitUsd: number;
   readonly monthlyLimitUsd: number;
   /** 解説の生成。無ければ /explain は「未启用」と答える。 */
@@ -313,24 +319,34 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         learnerId,
         'VOCABULARY',
       );
+      const activity =
+        deps.activity === undefined
+          ? undefined
+          : await deps.activity(learnerId, now);
+
+      const progressText = renderFullProgress({
+        kana: {
+          introduced: kana.progress.introduced,
+          total: kana.progress.total,
+          dueNow: kana.dueTotal,
+          mastered: masteredKana,
+        },
+        vocab: {
+          introduced: vocab.progress.introduced,
+          total: vocab.progress.total,
+          dueNow: vocab.dueTotal,
+          mastered: masteredVocab,
+        },
+        // 語彙を始めていない段階で 0/671 を突きつけない。
+        showVocab: vocab.stage !== 'S0_KANA_ONLY',
+      });
+
       return [
         {
-          text: renderFullProgress({
-            kana: {
-              introduced: kana.progress.introduced,
-              total: kana.progress.total,
-              dueNow: kana.dueTotal,
-              mastered: masteredKana,
-            },
-            vocab: {
-              introduced: vocab.progress.introduced,
-              total: vocab.progress.total,
-              dueNow: vocab.dueTotal,
-              mastered: masteredVocab,
-            },
-            // 語彙を始めていない段階で 0/671 を突きつけない。
-            showVocab: vocab.stage !== 'S0_KANA_ONLY',
-          }),
+          text:
+            activity === undefined
+              ? progressText
+              : `${progressText}\n\n${renderActivity(activity)}`,
         },
       ];
     },

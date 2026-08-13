@@ -12,6 +12,8 @@ import { runMigrations } from './db/migrate.js';
 import { createKnowledgeKeyStore } from './db/repositories/knowledgeItems.js';
 import { kanaOfKey } from './curriculum/kana.js';
 import { conversationLevel } from './curriculum/stage.js';
+import { streakOf } from './curriculum/render.js';
+import * as learningEventsRepo from './db/repositories/learningEvents.js';
 import * as reviewQueueRepo from './db/repositories/reviewQueue.js';
 import { createKanaCommands } from './learning/kanaCommands.js';
 import { ensureKanaSeeded } from './learning/kanaSeed.js';
@@ -20,7 +22,11 @@ import * as ttsCacheRepo from './db/repositories/ttsCache.js';
 import { speak } from './speech/voiceCache.js';
 import { collectReminderFacts } from './learning/reminderFacts.js';
 import { createDailyReminder } from './scheduler/index.js';
-import { partsInZone, zonedWallClockToInstant } from './scheduler/index.js';
+import {
+  localDateKey,
+  partsInZone,
+  zonedWallClockToInstant,
+} from './scheduler/index.js';
 import { createLogger, startHealthServer } from './observability/index.js';
 import {
   createCommandHandlers,
@@ -217,6 +223,32 @@ const kanaCommands = createKanaCommands({
   newPerDay: config.kana.newPerDay,
   maxReviews: config.kana.maxReviews,
   backlogThreshold: config.kana.backlogThreshold,
+  activity: async (learnerId, now) => {
+    const since = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
+    const stamps = await learningEventsRepo.answerTimestampsSince(
+      db,
+      learnerId,
+      since,
+    );
+    // 日界は学習者の時計で切る。試験済みの localDateKey に寄せて、
+    // 同じ判断を SQL 側にも書かない。
+    const counts = new Map<string, number>();
+    for (const at of stamps) {
+      const key = localDateKey(at, config.session.userTimezone);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const todayKey = localDateKey(now, config.session.userTimezone);
+    const dayKeyBefore = (key: string, back: number): string => {
+      const [y, m, d] = key.split('-').map((part) => Number.parseInt(part, 10));
+      const at = new Date(Date.UTC(y ?? 0, (m ?? 1) - 1, (d ?? 1) - back));
+      return `${String(at.getUTCFullYear())}-${String(at.getUTCMonth() + 1).padStart(2, '0')}-${String(at.getUTCDate()).padStart(2, '0')}`;
+    };
+    const days = Array.from({ length: 7 }, (_, index) => {
+      const key = dayKeyBefore(todayKey, 6 - index);
+      return { day: key, count: counts.get(key) ?? 0 };
+    });
+    return { days, streak: streakOf(counts, todayKey, dayKeyBefore) };
+  },
   dailyLimitUsd: config.budget.dailyCostSoftLimitUsd,
   monthlyLimitUsd: config.budget.monthlyCostSoftLimitUsd,
   explainItem: async (target) => {

@@ -373,3 +373,65 @@ describe('typed quiz answers', () => {
     expect(handleUpdate).toHaveBeenCalledOnce();
   });
 });
+
+describe('kana command failures', () => {
+  function setupFailing() {
+    const boom = () => Promise.reject(new Error('db down'));
+    const kanaCommands = {
+      today: vi.fn(boom),
+      drill: vi.fn(boom),
+      review: vi.fn(boom),
+      progress: vi.fn(boom),
+      answer: vi.fn(boom),
+      answerTyped: vi.fn(boom),
+      vocab: vi.fn(boom),
+      cost: vi.fn(boom),
+      explain: vi.fn(boom),
+    };
+    const handleUpdate = vi.fn().mockResolvedValue(undefined);
+    const bot = createBot({
+      config: fakeConfig(),
+      logger: fakeLogger(),
+      handleUpdate,
+      recordUpdate: vi.fn().mockResolvedValue(true),
+      commands: {
+        switchToConversation: vi.fn().mockResolvedValue('R_TALK'),
+        switchToCoach: vi.fn().mockResolvedValue('R_COACH'),
+        switchToChallenge: vi.fn().mockResolvedValue('R_CHALLENGE'),
+        endSession: vi.fn().mockResolvedValue('R_END'),
+      },
+      kana: { commands: kanaCommands, audioDir: 'assets/kana-audio' },
+    });
+    return { bot, apiCalls: stubBotApi(bot), handleUpdate };
+  }
+
+  // 叩いたのに何も返らないのは、壊れていることすら分からない壊れ方。
+  it('answers even when the command throws', async () => {
+    const { bot, apiCalls } = setupFailing();
+    await bot.handleUpdate(
+      commandUpdate({
+        updateId: 4300,
+        userId: ALLOWED_USER_ID,
+        messageId: 500,
+        command: 'today',
+      }),
+    );
+    expect(sentTexts(apiCalls)).toEqual(['刚才没能处理，请再试一次。']);
+  });
+
+  it('answers when grading a typed reply throws', async () => {
+    const { bot, apiCalls, handleUpdate } = setupFailing();
+    await bot.handleUpdate(
+      replyUpdate({
+        updateId: 4301,
+        userId: ALLOWED_USER_ID,
+        messageId: 502,
+        text: 'ka',
+        repliedText: '这个假名怎么读？\n\nか\n\n直接回复罗马字（例：ka）',
+      }),
+    );
+    expect(sentTexts(apiCalls)).toEqual(['刚才没能处理，请再试一次。']);
+    // 失敗をチューターに流して二重に応答しない
+    expect(handleUpdate).not.toHaveBeenCalled();
+  });
+});

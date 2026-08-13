@@ -113,6 +113,16 @@ async function send(
   }
 }
 
+/**
+ * 何が起きても学習者に一言返す。
+ *
+ * 既定では例外は bot.catch まで上がってログが残るだけで、送信側からは
+ * **何も返ってこない**。コマンドを叩いたのに沈黙するのは、壊れていることすら
+ * 分からない壊れ方——チューター側で直したのと同じ問題なので、
+ * 学習コマンドの入口にも同じ手当てをする。
+ */
+const FAILED_REPLY = '刚才没能处理，请再试一次。';
+
 export function registerKanaCommands(
   bot: Bot<AppContext>,
   deps: KanaHandlerDeps,
@@ -125,7 +135,12 @@ export function registerKanaCommands(
     return async (ctx) => {
       const userId = ctx.from?.id;
       if (userId === undefined) return;
-      await send(ctx, await handler(userId), deps);
+      try {
+        await send(ctx, await handler(userId), deps);
+      } catch (error) {
+        ctx.logger.error('kana command failed', { error });
+        await ctx.reply(FAILED_REPLY);
+      }
     };
   };
 
@@ -155,13 +170,21 @@ export function registerKanaCommands(
     }
 
     const askedAt = new Date(replyTo.date * 1000);
-    const replies = await commands.answerTyped(
-      userId,
-      questionText,
-      ctx.message.text,
-      askedAt,
-    );
+    let replies;
+    try {
+      replies = await commands.answerTyped(
+        userId,
+        questionText,
+        ctx.message.text,
+        askedAt,
+      );
+    } catch (error) {
+      ctx.logger.error('grading a typed answer failed', { error });
+      await ctx.reply(FAILED_REPLY);
+      return;
+    }
     if (replies === undefined) {
+      // 出題への返信ではなかった。通常の会話として次へ流す。
       await next();
       return;
     }
@@ -188,10 +211,15 @@ export function registerKanaCommands(
       ctx.logger.debug('could not clear keyboard', { error });
     }
 
-    await send(
-      ctx,
-      await commands.answer(userId, ctx.callbackQuery.data, askedAt),
-      deps,
-    );
+    try {
+      await send(
+        ctx,
+        await commands.answer(userId, ctx.callbackQuery.data, askedAt),
+        deps,
+      );
+    } catch (error) {
+      ctx.logger.error('grading a tapped answer failed', { error });
+      await ctx.reply(FAILED_REPLY);
+    }
   });
 }

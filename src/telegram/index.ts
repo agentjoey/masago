@@ -5,3 +5,5 @@ export {
   registerCommands,
   UNKNOWN_COMMAND_REPLY,
 } from './commands/index.js';
+export { startWithRetry, CONFLICT_STATUS } from './startWithRetry.js';
+export type { StartWithRetryOptions } from './startWithRetry.js';

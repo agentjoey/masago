@@ -18,7 +18,7 @@ import {
 } from './sessions/index.js';
 import { isFfmpegAvailable } from './speech/index.js';
 import { createSpeechProviders } from './speech/providerFactory.js';
-import { createBot, type AppContext } from './telegram/index.js';
+import { createBot, startWithRetry, type AppContext } from './telegram/index.js';
 import { createVoiceDownloader } from './telegram/voice.js';
 import { createRecorder, recordUsage } from './usage/index.js';
 import pkg from '../package.json' with { type: 'json' };
@@ -220,9 +220,10 @@ async function main(): Promise<void> {
     ttsModel: tts.model,
   });
   logger.info('masago started', { version: pkg.version });
-  await bot.start({
-    onStart: (me) => {
-      logger.info('telegram bot connected', { username: me.username });
+  await startWithRetry(bot, {
+    logger,
+    onStart: (username) => {
+      logger.info('telegram bot connected', { username });
     },
   });
 }

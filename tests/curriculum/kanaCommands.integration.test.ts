@@ -206,11 +206,14 @@ describe.skipIf(!HAS_DB)('kana commands', () => {
     },
   );
 
-  it('reports progress', { timeout: 120000 }, async () => {
+  it('reports progress for both stages', { timeout: 120000 }, async () => {
     const commands = makeCommands();
     const replies = await commands.progress(TELEGRAM_USER_ID);
-    expect(replies[0]?.text).toContain('五十音进度');
+    expect(replies[0]?.text).toContain('学习进度');
+    expect(replies[0]?.text).toContain('五十音');
     expect(replies[0]?.text).toMatch(/已学 \d+\/104/);
+    // 清音がまだなので単語の行は出さない
+    expect(replies[0]?.text).not.toContain('N5 单词');
   });
 
   it(

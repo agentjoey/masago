@@ -462,3 +462,36 @@ describe.skipIf(!HAS_DB)('/explain', () => {
     expect(replies[0]?.text).toContain('暂时不可用');
   });
 });
+
+describe.skipIf(!HAS_DB)('/start', () => {
+  const NEW_USER = 9_940_000_000 + (RUN % 100_000);
+
+  afterAll(async () => {
+    const { db, schema } = need();
+    await db
+      .delete(schema.learnerProfiles)
+      .where(eq(schema.learnerProfiles.telegramUserId, NEW_USER));
+  });
+
+  // Telegram は bot を開いた時点で /start を送る。ここで記録を作らないと、
+  // 続けて /today を叩いた人が「先に一言送ってください」から始まる。
+  it('creates the learner record so the next command works', async () => {
+    const commands = makeCommands();
+
+    const welcome = await commands.start(NEW_USER);
+    expect(welcome[0]?.text).toContain('MasaGo');
+    expect(welcome[0]?.text).toContain('/kana');
+
+    // 直後に /today が使える
+    const today = await commands.today(NEW_USER);
+    expect(today[0]?.text).not.toContain('学习档案');
+    expect(today[0]?.text).toContain('今天的学习');
+  });
+
+  it('greets a returning learner differently', async () => {
+    const commands = makeCommands();
+    const again = await commands.start(NEW_USER);
+    expect(again[0]?.text).toContain('欢迎回来');
+    expect(again[0]?.text).not.toContain('我是 MasaGo');
+  });
+});

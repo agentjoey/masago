@@ -144,6 +144,10 @@ export function registerKanaCommands(
     };
   };
 
+  // Telegram は bot を開いた時点で /start を送る。ここを拾わないと
+  // 初対面が「未知命令」になる。
+  bot.command('start', run((userId) => commands.start(userId)));
+  bot.command('help', run((userId) => commands.start(userId)));
   bot.command('today', run((userId) => commands.today(userId)));
   bot.command('kana', run((userId) => commands.drill(userId)));
   bot.command('review', run((userId) => commands.review(userId)));

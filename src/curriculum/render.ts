@@ -333,3 +333,37 @@ export function renderCost(view: CostView): string {
   }
   return lines.join('\n');
 }
+
+/**
+ * 初回の案内（`/start`）。
+ *
+ * 中国語で書く。ここを読むのは日本語を一文字も知らない人で、
+ * 日本語で歓迎しても意味が通らない。
+ */
+export function renderWelcome(returning: boolean): string {
+  if (returning) {
+    return [
+      '👋 欢迎回来。',
+      '',
+      '发 /today 看今天的安排，或直接 /kana 开始。',
+    ].join('\n');
+  }
+  return [
+    '👋 我是 MasaGo，陪你从零开始学日语。',
+    '',
+    '怎么走：',
+    '1. 先学五十音（每天 5 个，带发音语音）',
+    '2. 清音学完后开始 N5 单词，按 Genki 课本顺序',
+    '3. 复习时间由程序按记忆曲线安排，不用自己规划',
+    '',
+    '常用命令',
+    '  /today    今天学什么',
+    '  /kana     练五十音',
+    '  /vocab    练单词',
+    '  /review   只复习到期的',
+    '  /progress 看进度',
+    '  /explain  讲解刚才那一项',
+    '',
+    '现在就可以发 /kana 开始第一课。',
+  ].join('\n');
+}

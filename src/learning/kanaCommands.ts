@@ -11,6 +11,7 @@ import {
   renderVocabCorrect,
   renderVocabQuestion,
   renderVocabWrong,
+  renderWelcome,
   renderWrong,
   type CostView,
 } from '../curriculum/render.js';
@@ -98,6 +99,8 @@ export interface KanaCommands {
   cost(telegramUserId: number): Promise<KanaReply[]>;
   /** 直近に答えた項目の解説。 */
   explain(telegramUserId: number): Promise<KanaReply[]>;
+  /** 初回の案内。学習者の記録もここで作る。 */
+  start(telegramUserId: number): Promise<KanaReply[]>;
 }
 
 export interface KanaCommandDeps {
@@ -395,6 +398,19 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         return [{ text: '成本统计尚未启用。' }];
       }
       return [{ text: renderCost(await deps.costSummary(deps.now())) }];
+    },
+
+    async start(telegramUserId) {
+      // ここで記録を作る。Telegram は bot を開いた時点で /start を送るので、
+      // ここを通らないと「先に一言送ってください」から始まることになる。
+      const existing = await learnerProfiles.findByTelegramUserId(
+        executor,
+        telegramUserId,
+      );
+      if (existing === undefined) {
+        await learnerProfiles.upsert(executor, { telegramUserId });
+      }
+      return [{ text: renderWelcome(existing !== undefined) }];
     },
 
     async explain(telegramUserId) {

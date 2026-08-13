@@ -226,6 +226,7 @@ describe('kana command routing', () => {
       vocab: vi.fn().mockResolvedValue([{ text: 'R_VOCAB' }]),
       cost: vi.fn().mockResolvedValue([{ text: 'R_COST' }]),
       explain: vi.fn().mockResolvedValue([{ text: 'R_EXPLAIN' }]),
+      start: vi.fn().mockResolvedValue([{ text: 'R_START' }]),
     };
     const bot = createBot({
       config: fakeConfig(),
@@ -255,6 +256,8 @@ describe('kana command routing', () => {
     ['vocab', 'R_VOCAB'],
     ['cost', 'R_COST'],
     ['explain', 'R_EXPLAIN'],
+    ['start', 'R_START'],
+    ['help', 'R_START'],
   ])('routes /%s to the kana layer, not the catch-all', async (name, reply) => {
     const { bot, apiCalls } = setupKana();
 
@@ -299,6 +302,7 @@ describe('typed quiz answers', () => {
       vocab: vi.fn().mockResolvedValue([{ text: 'R_VOCAB' }]),
       cost: vi.fn().mockResolvedValue([{ text: 'R_COST' }]),
       explain: vi.fn().mockResolvedValue([{ text: 'R_EXPLAIN' }]),
+      start: vi.fn().mockResolvedValue([{ text: 'R_START' }]),
     };
     const handleUpdate = vi.fn().mockResolvedValue(undefined);
     const bot = createBot({
@@ -387,6 +391,7 @@ describe('kana command failures', () => {
       vocab: vi.fn(boom),
       cost: vi.fn(boom),
       explain: vi.fn(boom),
+      start: vi.fn(boom),
     };
     const handleUpdate = vi.fn().mockResolvedValue(undefined);
     const bot = createBot({

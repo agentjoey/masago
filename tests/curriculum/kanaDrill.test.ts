@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   decodeAnswer,
   encodeAnswer,
+  isTypedTier,
   questionKindFor,
+  targetOfQuestionText,
+  tierFor,
 } from '../../src/learning/kanaDrill.js';
 import { isCorrectAnswer } from '../../src/curriculum/quiz.js';
 import {
@@ -11,23 +14,13 @@ import {
   renderToday,
   renderWrong,
 } from '../../src/curriculum/render.js';
-import { KANA_BY_ID, type Kana } from '../../src/curriculum/kana.js';
+import { KANA, KANA_BY_ID, type Kana } from '../../src/curriculum/kana.js';
 
 function kana(id: string): Kana {
   const found = KANA_BY_ID.get(id);
   if (found === undefined) throw new Error(`unknown kana ${id}`);
   return found;
 }
-
-describe('questionKindFor', () => {
-  // 字を知らないうちに「a はどれ？」は総当たりにしかならない。
-  it('shows the glyph first, asks for it later', () => {
-    expect(questionKindFor(0)).toBe('GLYPH_TO_ROMAJI');
-    expect(questionKindFor(1)).toBe('GLYPH_TO_ROMAJI');
-    expect(questionKindFor(2)).toBe('ROMAJI_TO_GLYPH');
-    expect(questionKindFor(20)).toBe('ROMAJI_TO_GLYPH');
-  });
-});
 
 describe('callback encoding', () => {
   it('round-trips', () => {
@@ -177,5 +170,123 @@ describe('render', () => {
     expect(() =>
       renderProgress({ introduced: 0, total: 0, dueNow: 0, mastered: 0 }),
     ).not.toThrow();
+  });
+});
+
+describe('drill tiers — §4.3 的输入分档', () => {
+  // 认得 → 想得起 → 打得出。每一档都比上一档少给一点帮助。
+  it('climbs from recognising to producing', () => {
+    expect(tierFor(0)).toBe('RECOGNIZE');
+    expect(tierFor(1)).toBe('RECOGNIZE');
+    expect(tierFor(2)).toBe('RECALL');
+    expect(tierFor(3)).toBe('RECALL');
+    expect(tierFor(4)).toBe('PRODUCE');
+    expect(tierFor(50)).toBe('PRODUCE');
+  });
+
+  it('only asks the learner to type at the last tier', () => {
+    expect(isTypedTier(0)).toBe(false);
+    expect(isTypedTier(3)).toBe(false);
+    expect(isTypedTier(4)).toBe(true);
+  });
+
+  // 打たせるときは字を見せて読みを訊く。読みを見せて仮名を打たせるのは
+  // かな入力が要るので、この段階では出さない。
+  it('shows the glyph when it wants the reading typed', () => {
+    expect(questionKindFor(4)).toBe('GLYPH_TO_ROMAJI');
+    expect(questionKindFor(0)).toBe('GLYPH_TO_ROMAJI');
+    expect(questionKindFor(2)).toBe('ROMAJI_TO_GLYPH');
+  });
+});
+
+describe('targetOfQuestionText — 从被回复的消息里认出考的是哪个假名', () => {
+  it('recovers the target from a typed question', () => {
+    const text = renderQuestion(
+      {
+        kind: 'GLYPH_TO_ROMAJI',
+        targetId: 'si',
+        script: 'hiragana',
+        prompt: 'し',
+        options: [],
+        correctIds: ['si'],
+      },
+      true,
+    );
+    expect(targetOfQuestionText(text)).toBe('si');
+  });
+
+  it('round-trips for every kana', () => {
+    for (const kana of KANA) {
+      const text = renderQuestion(
+        {
+          kind: 'GLYPH_TO_ROMAJI',
+          targetId: kana.id,
+          script: 'hiragana',
+          prompt: kana.hiragana,
+          options: [],
+          correctIds: [kana.id],
+        },
+        true,
+      );
+      expect(targetOfQuestionText(text), kana.id).toBe(kana.id);
+    }
+  });
+
+  // 普通の会話に返信しただけなら、採点してはいけない。
+  it('returns nothing for a message that is not a question', () => {
+    expect(targetOfQuestionText('こんにちは！今日はどうでしたか？')).toBeUndefined();
+    expect(targetOfQuestionText('')).toBeUndefined();
+    expect(targetOfQuestionText('📊 五十音进度\n\n已学 5/104')).toBeUndefined();
+  });
+
+  // 説明文の中に紛れた同じ字を拾わない。行全体が字形のときだけ。
+  it('ignores kana that appear inside explanatory text', () => {
+    expect(
+      targetOfQuestionText('あ行を勉強しましょう。がんばって！'),
+    ).toBeUndefined();
+  });
+
+  it('finds the glyph even with surrounding whitespace', () => {
+    expect(targetOfQuestionText('这个假名怎么读？\n\n  か  \n\n直接回复')).toBe(
+      'ka',
+    );
+  });
+});
+
+describe('renderQuestion — typed variant', () => {
+  const question = {
+    kind: 'GLYPH_TO_ROMAJI' as const,
+    targetId: 'ka',
+    script: 'hiragana' as const,
+    prompt: 'か',
+    options: [],
+    correctIds: ['ka'],
+  };
+
+  it('tells the learner to type when there are no buttons', () => {
+    const typed = renderQuestion(question, true);
+    expect(typed).toContain('直接回复');
+    expect(typed).toContain('か');
+  });
+
+  it('keeps the glyph on a line of its own so it can be recovered', () => {
+    const lines = renderQuestion(question, true).split('\n');
+    expect(lines).toContain('か');
+  });
+
+  it('says nothing about typing in the button variant', () => {
+    expect(renderQuestion(question)).not.toContain('直接回复');
+  });
+});
+
+describe('renderWrong — typed answers', () => {
+  it('echoes what the learner typed', () => {
+    const text = renderWrong(kana('si'), undefined, 'sa');
+    expect(text).toContain('し');
+    expect(text).toContain('「sa」');
+  });
+
+  it('does not echo an empty answer', () => {
+    expect(renderWrong(kana('si'), undefined, '   ')).not.toContain('你打的是');
   });
 });

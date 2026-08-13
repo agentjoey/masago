@@ -98,6 +98,33 @@ export function textUpdate(options: {
   };
 }
 
+/** 出題への返信。reply_to_message から「何を訊かれたか」を辿らせる。 */
+export function replyUpdate(options: {
+  updateId: number;
+  userId: number;
+  messageId: number;
+  text: string;
+  repliedText: string;
+}): Update {
+  return {
+    update_id: options.updateId,
+    message: {
+      message_id: options.messageId,
+      date: 1_700_000_100,
+      chat: { id: options.userId, type: 'private', first_name: 'CI' },
+      from: { id: options.userId, is_bot: false, first_name: 'CI' },
+      text: options.text,
+      reply_to_message: {
+        message_id: options.messageId - 1,
+        date: 1_700_000_000,
+        chat: { id: options.userId, type: 'private', first_name: 'CI' },
+        text: options.repliedText,
+        reply_to_message: undefined,
+      },
+    },
+  };
+}
+
 export function voiceUpdate(options: {
   updateId: number;
   userId: number;

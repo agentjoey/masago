@@ -41,7 +41,16 @@ async function send(
 ): Promise<void> {
   for (const reply of replies) {
     const keyboard = keyboardOf(reply);
-    await ctx.reply(reply.text, keyboard === undefined ? {} : { reply_markup: keyboard });
+    // 打ち込みで答える問題は ForceReply を付ける。返信にしておけば
+    // 「どの問題への答えか」が返信元から辿れて、直前の出題を
+    // どこかに覚えておかずに済む。
+    const markup =
+      keyboard !== undefined
+        ? { reply_markup: keyboard }
+        : reply.expectsReply === true
+          ? { reply_markup: { force_reply: true as const } }
+          : {};
+    await ctx.reply(reply.text, markup);
 
     if (reply.audioKanaId === undefined) continue;
     const fileName = kanaAudioFileName(reply.audioKanaId);
@@ -88,6 +97,37 @@ export function registerKanaCommands(
   bot.command('kana', run((userId) => commands.drill(userId)));
   bot.command('review', run((userId) => commands.review(userId)));
   bot.command('progress', run((userId) => commands.progress(userId)));
+
+  /**
+   * 出題への返信を、通常の会話より先に受け取る。
+   *
+   * 返信元が出題でなければ `answerTyped` は undefined を返すので、
+   * その場合は次の middleware（＝チューターとの会話）へ流す。
+   * 「今どの問題に答えているか」を保持しないので、途中で会話を
+   * 挟まれても取り違えない。
+   */
+  bot.on('message:text', async (ctx, next) => {
+    const replyTo = ctx.message.reply_to_message;
+    const questionText = replyTo?.text;
+    const userId = ctx.from?.id;
+    if (replyTo === undefined || questionText === undefined || userId === undefined) {
+      await next();
+      return;
+    }
+
+    const askedAt = new Date(replyTo.date * 1000);
+    const replies = await commands.answerTyped(
+      userId,
+      questionText,
+      ctx.message.text,
+      askedAt,
+    );
+    if (replies === undefined) {
+      await next();
+      return;
+    }
+    await send(ctx, replies, audioDir);
+  });
 
   bot.callbackQuery(/^kq:/, async (ctx) => {
     const userId = ctx.from.id;

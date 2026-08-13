@@ -220,6 +220,18 @@ export const KANA_BY_ID: ReadonlyMap<string, Kana> = new Map(
   KANA.map((kana) => [kana.id, kana]),
 );
 
+/**
+ * 字形から引く。平仮名・片仮名とも一意なので同じ表に入れてよい
+ * （字形の一意性はテストで固定してある）。
+ *
+ * 打ち込みで答える出題は、返信元のメッセージから「何を訊かれたか」を
+ * 復元する。どこかに覚えておかなくて済む代わりに、字形が鍵になる。
+ */
+export const KANA_BY_GLYPH: ReadonlyMap<string, Kana> = new Map([
+  ...KANA.map((kana): [string, Kana] => [kana.hiragana, kana]),
+  ...KANA.map((kana): [string, Kana] => [kana.katakana, kana]),
+]);
+
 /** knowledge_items.key に使う形。型が KANA なので接頭辞で衝突は避けられる。 */
 export function kanaKey(id: string): string {
   return `kana_${id}`;

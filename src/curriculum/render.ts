@@ -54,10 +54,22 @@ export function renderTeachingCard(kana: Kana, index: number, total: number): st
   ].join('\n');
 }
 
-export function renderQuestion(question: QuizQuestion): string {
+/**
+ * 出題の本文。
+ *
+ * 字形は必ず単独の行に置く。打ち込みで答えたものは、返信元の本文から
+ * 「何を訊かれたか」を読み直して採点する（targetOfQuestionText）ので、
+ * 説明文と同じ行に混ぜると復元できなくなる。
+ */
+export function renderQuestion(
+  question: QuizQuestion,
+  typed = false,
+): string {
   switch (question.kind) {
     case 'GLYPH_TO_ROMAJI':
-      return `这个假名怎么读？\n\n${question.prompt}`;
+      return typed
+        ? `这个假名怎么读？\n\n${question.prompt}\n\n直接回复罗马字（例：ka）`
+        : `这个假名怎么读？\n\n${question.prompt}`;
     case 'ROMAJI_TO_GLYPH':
       return `哪个是 ${question.prompt}？`;
     case 'AUDIO_TO_GLYPH':
@@ -69,10 +81,18 @@ export function renderCorrect(kana: Kana): string {
   return `✅ ${kana.hiragana} = ${kana.romaji}`;
 }
 
-export function renderWrong(target: Kana, chosen: Kana | undefined): string {
+export function renderWrong(
+  target: Kana,
+  chosen: Kana | undefined,
+  typed?: string,
+): string {
   const lines = [`❌ 正确答案是 ${target.hiragana}（${target.romaji}）`];
   if (chosen !== undefined && chosen.id !== target.id) {
     lines.push(`你选的 ${chosen.hiragana} 读作 ${chosen.romaji}`);
+  } else if (typed !== undefined && typed.trim() !== '') {
+    // 打ち間違いか、別の字と取り違えたのか。返した文字をそのまま見せると
+    // 「何を打ったか」を自分で確かめられる。
+    lines.push(`你打的是「${typed.trim()}」`);
   }
   return lines.join('\n');
 }

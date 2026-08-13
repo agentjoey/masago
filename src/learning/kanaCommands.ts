@@ -16,7 +16,9 @@ import {
   decodeAnswer,
   encodeAnswer,
   gradeAndRecord,
+  gradeTypedAndRecord,
   nextDrillQuestion,
+  targetOfQuestionText,
 } from './kanaDrill.js';
 import { introduceKana, planKanaLesson } from './kanaSession.js';
 
@@ -38,6 +40,14 @@ export interface KanaReply {
   readonly buttons?: readonly KanaButton[];
   /** 送るべき仮名音声の id。発音を教えるのは音でしかできない。 */
   readonly audioKanaId?: string;
+  /**
+   * 返信で答えてもらう問題か。Telegram の ForceReply を付ける目印。
+   *
+   * 返信にしておくと「どの問題への答えか」が返信元から辿れる。
+   * 直前の問題を覚えておく必要が無く、途中で他の操作を挟まれても
+   * 取り違えない。
+   */
+  readonly expectsReply?: boolean;
 }
 
 export interface KanaCommands {
@@ -50,6 +60,16 @@ export interface KanaCommands {
     callbackData: string,
     askedAt: Date | undefined,
   ): Promise<KanaReply[]>;
+  /**
+   * 打ち込みの答え。`questionText` は返信元の本文で、そこから
+   * 何を訊いたかを復元する。
+   */
+  answerTyped(
+    telegramUserId: number,
+    questionText: string,
+    typed: string,
+    askedAt: Date | undefined,
+  ): Promise<KanaReply[] | undefined>;
 }
 
 export interface KanaCommandDeps {
@@ -85,6 +105,16 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
     return learner?.id;
   }
 
+  /**
+   * 出題から解答までの実測。負や桁外れは計測失敗として捨てる
+   * ——時計のずれを「一瞬で答えた」と読むと難易度推定が壊れる。
+   */
+  function responseMsOf(askedAt: Date | undefined, now: Date): number | undefined {
+    if (askedAt === undefined) return undefined;
+    const elapsed = now.getTime() - askedAt.getTime();
+    return elapsed >= 0 && elapsed < 600_000 ? elapsed : undefined;
+  }
+
   /** 次の一問。無ければ締めの一言。 */
   async function askNext(
     learnerId: string,
@@ -97,6 +127,11 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
     });
     if (next === undefined) {
       return [{ text: renderDrillFinished(answered) }];
+    }
+    if (next.typed) {
+      // 選択肢を出さない。四択は消去法で当たるので、打てて初めて
+      // 「覚えた」に近づく（§4.3 第二段）。
+      return [{ text: renderQuestion(next.question, true), expectsReply: true }];
     }
     return [
       {
@@ -219,9 +254,6 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       }
 
       const now = deps.now();
-      const responseMs =
-        askedAt === undefined ? undefined : now.getTime() - askedAt.getTime();
-
       const graded = await gradeAndRecord(
         executor,
         learnerId,
@@ -230,11 +262,7 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         decoded.kind,
         now,
         deps.requestRetention,
-        // 負や桁外れの値は計測失敗として捨てる。時計のずれを
-        // 「一瞬で答えた」と読むと難易度推定が壊れる。
-        responseMs !== undefined && responseMs >= 0 && responseMs < 600_000
-          ? responseMs
-          : undefined,
+        responseMsOf(askedAt, now),
       );
 
       const feedback: KanaReply = graded.correct
@@ -242,6 +270,36 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         : {
             text: renderWrong(graded.target, graded.chosen),
             // 間違えた字は音でも確かめさせる。
+            audioKanaId: graded.target.id,
+          };
+
+      return [feedback, ...(await askNext(learnerId, now, 1))];
+    },
+
+    async answerTyped(telegramUserId, questionText, typed, askedAt) {
+      // 返信元が出題でなければ、これは答えではなく普通の会話。
+      // undefined を返して、呼び出し側に通常の経路へ渡させる。
+      const targetId = targetOfQuestionText(questionText);
+      if (targetId === undefined) return undefined;
+
+      const learnerId = await learnerIdOf(telegramUserId);
+      if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
+
+      const now = deps.now();
+      const graded = await gradeTypedAndRecord(
+        executor,
+        learnerId,
+        targetId,
+        typed,
+        now,
+        deps.requestRetention,
+        responseMsOf(askedAt, now),
+      );
+
+      const feedback: KanaReply = graded.correct
+        ? { text: renderCorrect(graded.target) }
+        : {
+            text: renderWrong(graded.target, undefined, typed),
             audioKanaId: graded.target.id,
           };
 

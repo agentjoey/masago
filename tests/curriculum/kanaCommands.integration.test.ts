@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm';
+import { KANA_BY_ID } from '../../src/curriculum/kana.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 try {
@@ -247,6 +248,144 @@ describe.skipIf(!HAS_DB)('kana commands', () => {
         .from(schema.reviewQueue)
         .where(eq(schema.reviewQueue.learnerId, learnerId));
       expect(after.length).toBe(before.length);
+    },
+  );
+});
+
+describe.skipIf(!HAS_DB)('typed answers (§4.3 第二档)', () => {
+  it(
+    'switches from buttons to typing once the kana is familiar',
+    { timeout: 180000 },
+    async () => {
+      const { db, schema } = need();
+      const commands = makeCommands();
+
+      // 専用の学習者を立てる。他の用例の進度に引きずられないため。
+      const [learner] = await db
+        .insert(schema.learnerProfiles)
+        .values({ telegramUserId: 9_900_000_000 + (RUN % 100_000) })
+        .returning();
+      if (!learner) throw new Error('failed to create learner');
+      const userId = 9_900_000_000 + (RUN % 100_000);
+
+      try {
+        clock = new Date('2026-12-01T09:00:00Z');
+        await commands.drill(userId); // あ行を導入
+
+        // 復習間隔は答えるたびに伸びる。時計を一定量ずつ進めると
+        // すぐ「期日が来ていない」だけになるので、次の期日まで飛ばす。
+        const jumpToNextDue = async (): Promise<boolean> => {
+          const [row] = await db
+            .select({ at: schema.reviewQueue.nextReviewAt })
+            .from(schema.reviewQueue)
+            .where(eq(schema.reviewQueue.learnerId, learner.id))
+            .orderBy(schema.reviewQueue.nextReviewAt)
+            .limit(1);
+          if (row === undefined) return false;
+          if (row.at.getTime() > clock.getTime()) clock = new Date(row.at);
+          return true;
+        };
+
+        let sawButtons = 0;
+        let sawTyped = 0;
+        const drillModule = await import('../../src/learning/kanaDrill.js');
+
+        for (let round = 0; round < 60 && sawTyped < 2; round += 1) {
+          const replies = await commands.review(userId);
+          const question = replies[0];
+          if (question === undefined) break;
+
+          if (question.buttons !== undefined) {
+            sawButtons += 1;
+            const targetId = question.buttons[0]?.data.split(':')[2];
+            const correct = question.buttons.find(
+              (b) => b.data.split(':')[3] === targetId,
+            );
+            if (correct === undefined) throw new Error('no correct option');
+            await commands.answer(userId, correct.data, clock);
+          } else if (question.expectsReply === true) {
+            sawTyped += 1;
+            // 打ち込みの問題には選択肢が無い
+            expect(question.buttons).toBeUndefined();
+            expect(question.text).toContain('直接回复');
+
+            const asked = drillModule.targetOfQuestionText(question.text);
+            expect(asked).toBeDefined();
+            if (asked === undefined) break;
+            const romaji = KANA_BY_ID.get(asked)?.romaji ?? '';
+            const graded = await commands.answerTyped(
+              userId,
+              question.text,
+              romaji,
+              clock,
+            );
+            expect(graded?.[0]?.text).toContain('✅');
+          }
+          if (!(await jumpToNextDue())) break;
+        }
+
+        expect(sawButtons).toBeGreaterThan(0);
+        // 十分繰り返せば必ず打たせる段に届く
+        expect(sawTyped).toBeGreaterThan(0);
+      } finally {
+        await db
+          .delete(schema.reviewQueue)
+          .where(eq(schema.reviewQueue.learnerId, learner.id));
+        await db
+          .delete(schema.learnerProfiles)
+          .where(eq(schema.learnerProfiles.id, learner.id));
+      }
+    },
+  );
+
+  // 会話への返信を採点してしまうと、話しかけただけで不正解が積まれる。
+  it(
+    'leaves a reply to an ordinary message alone',
+    { timeout: 60000 },
+    async () => {
+      const commands = makeCommands();
+      const result = await commands.answerTyped(
+        TELEGRAM_USER_ID,
+        'こんにちは！今日はどうでしたか？',
+        'げんきです',
+        clock,
+      );
+      expect(result).toBeUndefined();
+    },
+  );
+
+  it(
+    'accepts kunrei spelling as well as hepburn',
+    { timeout: 60000 },
+    async () => {
+      const commands = makeCommands();
+      const question = '这个假名怎么读？\n\nし\n\n直接回复罗马字（例：ka）';
+      for (const typed of ['shi', 'si', ' SHI ']) {
+        const replies = await commands.answerTyped(
+          TELEGRAM_USER_ID,
+          question,
+          typed,
+          clock,
+        );
+        expect(replies?.[0]?.text, typed).toContain('✅');
+      }
+    },
+  );
+
+  it(
+    'shows what was typed when it is wrong',
+    { timeout: 60000 },
+    async () => {
+      const commands = makeCommands();
+      const replies = await commands.answerTyped(
+        TELEGRAM_USER_ID,
+        '这个假名怎么读？\n\nし\n\n直接回复罗马字（例：ka）',
+        'sa',
+        clock,
+      );
+      expect(replies?.[0]?.text).toContain('❌');
+      expect(replies?.[0]?.text).toContain('「sa」');
+      expect(replies?.[0]?.audioKanaId).toBe('si');
     },
   );
 });

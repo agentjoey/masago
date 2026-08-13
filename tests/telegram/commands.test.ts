@@ -10,6 +10,7 @@ import {
   commandUpdate,
   fakeConfig,
   fakeLogger,
+  replyUpdate,
   stubBotApi,
   textUpdate,
 } from './helpers.js';
@@ -223,6 +224,7 @@ describe('kana command routing', () => {
       review: vi.fn().mockResolvedValue([{ text: 'R_REVIEW' }]),
       progress: vi.fn().mockResolvedValue([{ text: 'R_PROGRESS' }]),
       answer: vi.fn().mockResolvedValue([{ text: 'R_ANSWER' }]),
+      answerTyped: vi.fn().mockResolvedValue(undefined),
     };
     const bot = createBot({
       config: fakeConfig(),
@@ -278,5 +280,89 @@ describe('kana command routing', () => {
       }),
     );
     expect(sentTexts(apiCalls)).toEqual([UNKNOWN_COMMAND_REPLY]);
+  });
+});
+
+describe('typed quiz answers', () => {
+  function setupTyped(answerTypedResult: unknown) {
+    const kanaCommands = {
+      today: vi.fn().mockResolvedValue([{ text: 'R_TODAY' }]),
+      drill: vi.fn().mockResolvedValue([{ text: 'R_KANA' }]),
+      review: vi.fn().mockResolvedValue([{ text: 'R_REVIEW' }]),
+      progress: vi.fn().mockResolvedValue([{ text: 'R_PROGRESS' }]),
+      answer: vi.fn().mockResolvedValue([{ text: 'R_ANSWER' }]),
+      answerTyped: vi.fn().mockResolvedValue(answerTypedResult),
+    };
+    const handleUpdate = vi.fn().mockResolvedValue(undefined);
+    const bot = createBot({
+      config: fakeConfig(),
+      logger: fakeLogger(),
+      handleUpdate,
+      recordUpdate: vi.fn().mockResolvedValue(true),
+      commands: {
+        switchToConversation: vi.fn().mockResolvedValue('R_TALK'),
+        switchToCoach: vi.fn().mockResolvedValue('R_COACH'),
+        switchToChallenge: vi.fn().mockResolvedValue('R_CHALLENGE'),
+        endSession: vi.fn().mockResolvedValue('R_END'),
+      },
+      kana: { commands: kanaCommands, audioDir: 'assets/kana-audio' },
+    });
+    const apiCalls = stubBotApi(bot);
+    return { bot, kanaCommands, handleUpdate, apiCalls };
+  }
+
+  it('grades a reply to a quiz question without reaching the tutor', async () => {
+    const { bot, kanaCommands, handleUpdate, apiCalls } = setupTyped([
+      { text: 'R_GRADED' },
+    ]);
+
+    await bot.handleUpdate(
+      replyUpdate({
+        updateId: 4200,
+        userId: ALLOWED_USER_ID,
+        messageId: 400,
+        text: 'ka',
+        repliedText: '这个假名怎么读？\n\nか\n\n直接回复罗马字（例：ka）',
+      }),
+    );
+
+    expect(kanaCommands.answerTyped).toHaveBeenCalledOnce();
+    expect(sentTexts(apiCalls)).toEqual(['R_GRADED']);
+    expect(handleUpdate).not.toHaveBeenCalled();
+  });
+
+  // 会話への返信まで採点したら、話しかけただけで不正解が積まれる。
+  it('passes a reply to an ordinary message through to the tutor', async () => {
+    const { bot, kanaCommands, handleUpdate, apiCalls } = setupTyped(undefined);
+
+    await bot.handleUpdate(
+      replyUpdate({
+        updateId: 4201,
+        userId: ALLOWED_USER_ID,
+        messageId: 402,
+        text: 'げんきです',
+        repliedText: 'こんにちは！今日はどうでしたか？',
+      }),
+    );
+
+    expect(kanaCommands.answerTyped).toHaveBeenCalledOnce();
+    expect(handleUpdate).toHaveBeenCalledOnce();
+    expect(sentTexts(apiCalls)).toEqual([]);
+  });
+
+  it('leaves a plain message alone entirely', async () => {
+    const { bot, kanaCommands, handleUpdate } = setupTyped(undefined);
+
+    await bot.handleUpdate(
+      textUpdate({
+        updateId: 4202,
+        userId: ALLOWED_USER_ID,
+        messageId: 404,
+        text: 'こんにちは',
+      }),
+    );
+
+    expect(kanaCommands.answerTyped).not.toHaveBeenCalled();
+    expect(handleUpdate).toHaveBeenCalledOnce();
   });
 });

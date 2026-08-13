@@ -1,8 +1,14 @@
-import { KANA_BY_ID, kanaOfKey, type Kana } from '../curriculum/kana.js';
+import {
+  KANA_BY_GLYPH,
+  KANA_BY_ID,
+  kanaOfKey,
+  type Kana,
+} from '../curriculum/kana.js';
 import { taughtPool } from '../curriculum/lessonPlan.js';
 import {
   buildQuestion,
   isCorrectAnswer,
+  isCorrectRomaji,
   type QuestionKind,
   type QuizQuestion,
   type Random,
@@ -28,17 +34,39 @@ export interface DrillQuestion {
   readonly kana: Kana;
   /** これまでの出題回数。初回かどうかで問い方を変える。 */
   readonly reps: number;
+  /** 打ち込みで答えさせる段階か。選択肢は出さない。 */
+  readonly typed: boolean;
 }
 
 /**
- * 出題形式は習熟度で変える。
+ * 出題の段階（V2 §4.3）。回数が増えるほど楽な形式から外していく。
  *
- * 初めて見る字にいきなり「a はどれ？」と訊いても、字を知らないのだから
- * 総当たりになる。まず字を見せて読みを選ばせ、読めるようになってから
- * 逆を訊く。
+ * 1. 見て選ぶ（字 → 読み）……初見はこれしかない。字を知らないうちに
+ *    「a はどれ？」と訊いても総当たりになる。
+ * 2. 逆に選ぶ（読み → 字）……読めるようになってから。
+ * 3. 打つ（字 → 読みを入力）……四択は消去法で当たる。打てて初めて
+ *    「書ける」に近づく。選択肢を出さないので偶然の正解が消える。
+ *
+ * 三段目に上げる回数を早くしすぎると、まだ覚えていない字を打たせて
+ * 手が止まる。逆に遅すぎると、いつまでも四択の運が混ざる。
  */
+export type DrillTier = 'RECOGNIZE' | 'RECALL' | 'PRODUCE';
+
+export function tierFor(reps: number): DrillTier {
+  if (reps <= 1) return 'RECOGNIZE';
+  if (reps <= 3) return 'RECALL';
+  return 'PRODUCE';
+}
+
 export function questionKindFor(reps: number): QuestionKind {
-  return reps <= 1 ? 'GLYPH_TO_ROMAJI' : 'ROMAJI_TO_GLYPH';
+  // 打たせるときは字を見せて読みを訊く。読みを見せて字を打たせるのは
+  // かな入力が要るので、S1 以降（第三段の「日本語入力」）に回す。
+  return tierFor(reps) === 'RECALL' ? 'ROMAJI_TO_GLYPH' : 'GLYPH_TO_ROMAJI';
+}
+
+/** 選択肢を出すか、打たせるか。 */
+export function isTypedTier(reps: number): boolean {
+  return tierFor(reps) === 'PRODUCE';
 }
 
 export interface DrillOptions {
@@ -69,16 +97,19 @@ export async function nextDrillQuestion(
     .filter((id): id is string => id !== undefined);
 
   const kind = questionKindFor(first.entry.reps);
+  const typed = isTypedTier(first.entry.reps);
   const question = buildQuestion(kana, {
     kind,
     script: 'hiragana',
+    // 打たせる段でも問題は組む——正解判定の規則を一本にしておきたい。
+    // 選択肢そのものは送らない側で捨てる。
     optionCount: options.optionCount,
     random: options.random,
     // 誤答は習った字からだけ。未習の字を混ぜると、消去法すら効かない。
     pool: taughtPool(introducedIds),
   });
 
-  return { question, kana, reps: first.entry.reps };
+  return { question, kana, reps: first.entry.reps, typed };
 }
 
 export interface GradedAnswer {
@@ -134,6 +165,67 @@ export async function gradeAndRecord(
     chosen: KANA_BY_ID.get(chosenId),
     applied,
   };
+}
+
+/**
+ * 打ち込みの答えを採点して記録する。
+ *
+ * ヘボン式でも訓令式でも通す。「ji」は じ とも ぢ とも綴れるので、
+ * 正しく打てた人を不正解にはしない（isCorrectRomaji）。
+ */
+export async function gradeTypedAndRecord(
+  tx: Executor,
+  learnerId: string,
+  targetId: string,
+  typed: string,
+  now: Date,
+  requestRetention: number,
+  responseMs?: number,
+): Promise<GradedAnswer> {
+  const target = KANA_BY_ID.get(targetId);
+  if (target === undefined) {
+    throw new Error(`unknown kana ${targetId}`);
+  }
+  const correct = isCorrectRomaji(targetId, typed);
+
+  const outcome: ReviewOutcome = correct
+    ? {
+        kind: 'CORRECT',
+        hinted: false,
+        inputMode: 'ROMAJI',
+        ...(responseMs === undefined ? {} : { responseMs }),
+      }
+    : { kind: 'INCORRECT' };
+
+  const applied = await recordKanaAnswer(
+    tx,
+    learnerId,
+    targetId,
+    outcome,
+    now,
+    requestRetention,
+  );
+
+  return { correct, target, chosen: undefined, applied };
+}
+
+/**
+ * 出題メッセージの本文から「何を訊かれたか」を復元する。
+ *
+ * 打ち込みの答えには押しボタンが無いので、コールバックに情報を載せられない。
+ * とはいえ「出した問題」をどこかに覚えておくと、再起動やタイムアウトで
+ * 必ず失われる。返信元の本文には字形がそのまま入っているので、それを鍵にする
+ * ——状態を持たずに済み、いつ答えが返ってきても解釈がぶれない。
+ *
+ * 字形だけの行を探す。説明文に紛れた同じ字を拾わないため、行全体が
+ * 一致するものだけを見る。
+ */
+export function targetOfQuestionText(text: string): string | undefined {
+  for (const line of text.split('\n')) {
+    const kana = KANA_BY_GLYPH.get(line.trim());
+    if (kana !== undefined) return kana.id;
+  }
+  return undefined;
 }
 
 /** コールバックに載せる文字列。64 バイト制限があるので短く。 */

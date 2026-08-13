@@ -88,6 +88,9 @@ afterAll(async () => {
   const { db, schema, closeDb } = need();
   if (learnerId !== '') {
     await db
+      .delete(schema.learningEvents)
+      .where(eq(schema.learningEvents.learnerId, learnerId));
+    await db
       .delete(schema.reviewQueue)
       .where(eq(schema.reviewQueue.learnerId, learnerId));
     await db
@@ -334,6 +337,9 @@ describe.skipIf(!HAS_DB)('typed answers (§4.3 第二档)', () => {
         // 十分繰り返せば必ず打たせる段に届く
         expect(sawTyped).toBeGreaterThan(0);
       } finally {
+        await db
+          .delete(schema.learningEvents)
+          .where(eq(schema.learningEvents.learnerId, learner.id));
         await db
           .delete(schema.reviewQueue)
           .where(eq(schema.reviewQueue.learnerId, learner.id));

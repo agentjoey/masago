@@ -56,6 +56,7 @@ afterAll(async () => {
   if (modules === undefined) return;
   const { db, schema, closeDb } = need();
   if (learnerId !== '') {
+    await db.delete(schema.learningEvents).where(eq(schema.learningEvents.learnerId, learnerId));
     await db.delete(schema.reviewQueue).where(eq(schema.reviewQueue.learnerId, learnerId));
     await db.delete(schema.learnerProfiles).where(eq(schema.learnerProfiles.id, learnerId));
   }

@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 try {
@@ -84,6 +84,10 @@ afterAll(async () => {
     (id) => id !== '',
   );
   if (learnerIds.length > 0) {
+    // 事件は knowledge_items と learner_profiles を参照するので先に消す。
+    await db
+      .delete(schema.learningEvents)
+      .where(inArray(schema.learningEvents.learnerId, learnerIds));
     await db
       .delete(schema.reviewQueue)
       .where(inArray(schema.reviewQueue.learnerId, learnerIds));
@@ -301,5 +305,97 @@ describe.skipIf(!HAS_DB)('reviewQueue repository', () => {
     expect(
       (await repo.findEntry(db, created.otherLearnerId, first))?.state,
     ).not.toBe('MASTERED');
+  });
+});
+
+describe.skipIf(!HAS_DB)('learning events (§3.3)', () => {
+  it(
+    'records every answer so history can be recomputed later',
+    { timeout: 120000 },
+    async () => {
+      const { db, schema, service } = need();
+      const itemId = created.itemIds[0];
+      if (itemId === undefined) throw new Error('missing item');
+
+      const before = await db
+        .select()
+        .from(schema.learningEvents)
+        .where(eq(schema.learningEvents.learnerId, created.learnerId));
+
+      const at = new Date('2027-06-01T09:00:00Z');
+      await service.applyReview(
+        db,
+        created.learnerId,
+        itemId,
+        { kind: 'CORRECT', hinted: false, inputMode: 'ROMAJI' },
+        at,
+        RETENTION,
+      );
+      await service.applyReview(
+        db,
+        created.learnerId,
+        itemId,
+        { kind: 'INCORRECT' },
+        new Date(at.getTime() + 60_000),
+        RETENTION,
+      );
+
+      const after = await db
+        .select()
+        .from(schema.learningEvents)
+        .where(eq(schema.learningEvents.learnerId, created.learnerId));
+
+      // review_queue は最後の一回しか持たない。履歴は事件側にしか残らない。
+      expect(after.length).toBe(before.length + 2);
+      const types = after.map((row) => row.eventType);
+      expect(types).toContain('USER_CORRECT');
+      expect(types).toContain('FAILED_RECALL');
+    },
+  );
+
+  it('keeps the evidence needed to recompute', { timeout: 120000 }, async () => {
+    const { db, schema, service } = need();
+    const itemId = created.itemIds[1];
+    if (itemId === undefined) throw new Error('missing item');
+
+    const at = new Date('2027-06-02T09:00:00Z');
+    await service.applyReview(
+      db,
+      created.learnerId,
+      itemId,
+      { kind: 'CORRECT', hinted: true, inputMode: 'CHOICE', responseMs: 900 },
+      at,
+      RETENTION,
+    );
+
+    const [row] = await db
+      .select()
+      .from(schema.learningEvents)
+      .where(eq(schema.learningEvents.knowledgeItemId, itemId))
+      .orderBy(desc(schema.learningEvents.createdAt))
+      .limit(1);
+    expect(row?.evidence).toMatchObject({
+      inputMode: 'CHOICE',
+      hinted: true,
+    });
+  });
+
+  // 同じ項目を積み直しても導入は一度きり。
+  it('does not duplicate the introduction event', { timeout: 120000 }, async () => {
+    const { db, schema, service } = need();
+    const itemId = created.itemIds[2];
+    if (itemId === undefined) throw new Error('missing item');
+    const now = new Date('2027-06-03T09:00:00Z');
+
+    await service.enqueueNew(db, created.learnerId, [itemId], now);
+    await service.enqueueNew(db, created.learnerId, [itemId], now);
+
+    const rows = await db
+      .select()
+      .from(schema.learningEvents)
+      .where(eq(schema.learningEvents.knowledgeItemId, itemId));
+    expect(
+      rows.filter((r) => r.eventType === 'INTRODUCED').length,
+    ).toBeLessThanOrEqual(1);
   });
 });

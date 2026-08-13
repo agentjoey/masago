@@ -62,6 +62,9 @@ afterAll(async () => {
   const { db, schema, closeDb } = need();
   if (learnerId !== '') {
     await db
+      .delete(schema.learningEvents)
+      .where(eq(schema.learningEvents.learnerId, learnerId));
+    await db
       .delete(schema.reviewQueue)
       .where(eq(schema.reviewQueue.learnerId, learnerId));
     await db
@@ -229,6 +232,10 @@ describe.skipIf(!HAS_DB)('S0 kana session', () => {
       expect(plan.progress.total).toBe(104);
       expect(plan.progress.introduced).toBeLessThanOrEqual(104);
 
+      // 導入も事件として残るので、項目を消す前に事件を消す。
+      await db
+        .delete(schema.learningEvents)
+        .where(inArray(schema.learningEvents.knowledgeItemId, [grammar.id]));
       await db
         .delete(schema.reviewQueue)
         .where(inArray(schema.reviewQueue.knowledgeItemId, [grammar.id]));

@@ -3,7 +3,7 @@ import { InputFile } from 'grammy';
 import { createAnthropicClient, createMinimalTutor } from './agent/index.js';
 import { config } from './config/index.js';
 import { createCorrectionTurnHooks } from './corrections/index.js';
-import { closeDb, db, telegramUpdatesRepo } from './db/index.js';
+import { closeDb, db, telegramUpdatesRepo, usageRecordsRepo } from './db/index.js';
 import { runMigrations } from './db/migrate.js';
 import { createKnowledgeKeyStore } from './db/repositories/knowledgeItems.js';
 import { createKanaCommands } from './learning/kanaCommands.js';
@@ -27,7 +27,7 @@ import { isFfmpegAvailable } from './speech/index.js';
 import { createSpeechProviders } from './speech/providerFactory.js';
 import { createBot, startWithRetry, type AppContext } from './telegram/index.js';
 import { createVoiceDownloader } from './telegram/voice.js';
-import { createRecorder, recordUsage } from './usage/index.js';
+import { createRecorder, recordUsage, summarizeUsage } from './usage/index.js';
 import pkg from '../package.json' with { type: 'json' };
 
 const logger = createLogger({ level: config.logging.level });
@@ -195,6 +195,36 @@ const kanaCommands = createKanaCommands({
   newPerDay: config.kana.newPerDay,
   maxReviews: config.kana.maxReviews,
   backlogThreshold: config.kana.backlogThreshold,
+  dailyLimitUsd: config.budget.dailyCostSoftLimitUsd,
+  monthlyLimitUsd: config.budget.monthlyCostSoftLimitUsd,
+  costSummary: async (now) => {
+    // 当月ぶんだけ読む。全期間を舐めると行が増えるほど遅くなる。
+    const monthStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+    );
+    const records = await usageRecordsRepo.findCreatedBetween(
+      db,
+      monthStart,
+      new Date(now.getTime() + 60_000),
+    );
+    const summary = summarizeUsage(records, {
+      timezone: config.session.userTimezone,
+      now,
+    });
+    return {
+      todayUsd: summary.today.costUsd,
+      monthUsd: summary.thisMonth.costUsd,
+      dailyLimitUsd: config.budget.dailyCostSoftLimitUsd,
+      monthlyLimitUsd: config.budget.monthlyCostSoftLimitUsd,
+      unknownCostCalls: summary.thisMonth.unknownCostCalls,
+      topThisMonth: summary.breakdownThisMonth
+        .slice(0, 5)
+        .map((row) => ({
+          label: `${row.provider}/${row.model}`,
+          usd: row.costUsd,
+        })),
+    };
+  },
 });
 
 const bot = createBot({

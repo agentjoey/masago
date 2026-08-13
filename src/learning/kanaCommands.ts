@@ -1,6 +1,7 @@
 import { KANA_BY_ID } from '../curriculum/kana.js';
 import {
   renderCorrect,
+  renderCost,
   renderDaily,
   renderDrillFinished,
   renderProgress,
@@ -11,6 +12,7 @@ import {
   renderVocabQuestion,
   renderVocabWrong,
   renderWrong,
+  type CostView,
 } from '../curriculum/render.js';
 import type { Random } from '../curriculum/quiz.js';
 import type { Executor } from '../db/repositories/executor.js';
@@ -91,6 +93,8 @@ export interface KanaCommands {
   ): Promise<KanaReply[] | undefined>;
   /** S1：単語の練習。 */
   vocab(telegramUserId: number): Promise<KanaReply[]>;
+  /** 用量と費用。 */
+  cost(telegramUserId: number): Promise<KanaReply[]>;
 }
 
 export interface KanaCommandDeps {
@@ -102,6 +106,10 @@ export interface KanaCommandDeps {
   readonly newPerDay: number;
   readonly maxReviews: number;
   readonly backlogThreshold: number;
+  /** 費用の集計。DB とタイムゾーンは呼び出し側が閉じ込める。 */
+  readonly costSummary?: (now: Date) => Promise<CostView>;
+  readonly dailyLimitUsd: number;
+  readonly monthlyLimitUsd: number;
 }
 
 const NOT_REGISTERED =
@@ -355,6 +363,13 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
           };
 
       return [feedback, ...(await askNext(learnerId, now, 1))];
+    },
+
+    async cost() {
+      if (deps.costSummary === undefined) {
+        return [{ text: '成本统计尚未启用。' }];
+      }
+      return [{ text: renderCost(await deps.costSummary(deps.now())) }];
     },
 
     async vocab(telegramUserId) {

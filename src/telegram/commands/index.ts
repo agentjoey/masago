@@ -16,7 +16,6 @@ const RESERVED_COMMANDS = [
   'roleplay',
   'grammar',
   'listening',
-  'cost',
 ] as const;
 
 function telegramUserIdOf(ctx: AppContext): number | undefined {

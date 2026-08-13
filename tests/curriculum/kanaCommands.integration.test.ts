@@ -53,6 +53,8 @@ function makeCommands(): ReturnType<
     newPerDay: 5,
     maxReviews: 20,
     backlogThreshold: 20,
+    dailyLimitUsd: 1,
+    monthlyLimitUsd: 10,
   });
 }
 

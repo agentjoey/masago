@@ -157,7 +157,6 @@ describe('command routing', () => {
     'roleplay',
     'grammar',
     'listening',
-    'cost',
   ])('replies "not enabled" for reserved command /%s without touching the business layer', async (name) => {
     const { bot, commands, handleUpdate, apiCalls } = setup();
 
@@ -225,6 +224,7 @@ describe('kana command routing', () => {
       answer: vi.fn().mockResolvedValue([{ text: 'R_ANSWER' }]),
       answerTyped: vi.fn().mockResolvedValue(undefined),
       vocab: vi.fn().mockResolvedValue([{ text: 'R_VOCAB' }]),
+      cost: vi.fn().mockResolvedValue([{ text: 'R_COST' }]),
     };
     const bot = createBot({
       config: fakeConfig(),
@@ -252,6 +252,7 @@ describe('kana command routing', () => {
     ['review', 'R_REVIEW'],
     ['progress', 'R_PROGRESS'],
     ['vocab', 'R_VOCAB'],
+    ['cost', 'R_COST'],
   ])('routes /%s to the kana layer, not the catch-all', async (name, reply) => {
     const { bot, apiCalls } = setupKana();
 
@@ -294,6 +295,7 @@ describe('typed quiz answers', () => {
       answer: vi.fn().mockResolvedValue([{ text: 'R_ANSWER' }]),
       answerTyped: vi.fn().mockResolvedValue(answerTypedResult),
       vocab: vi.fn().mockResolvedValue([{ text: 'R_VOCAB' }]),
+      cost: vi.fn().mockResolvedValue([{ text: 'R_COST' }]),
     };
     const handleUpdate = vi.fn().mockResolvedValue(undefined);
     const bot = createBot({

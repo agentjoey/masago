@@ -9,6 +9,7 @@ import {
 } from '../../src/learning/kanaDrill.js';
 import { isCorrectAnswer } from '../../src/curriculum/quiz.js';
 import {
+  renderCost,
   renderProgress,
   renderQuestion,
   renderToday,
@@ -288,5 +289,55 @@ describe('renderWrong — typed answers', () => {
 
   it('does not echo an empty answer', () => {
     expect(renderWrong(kana('si'), undefined, '   ')).not.toContain('你打的是');
+  });
+});
+
+describe('renderCost', () => {
+  const base = {
+    todayUsd: 0.0123,
+    monthUsd: 0.4567,
+    dailyLimitUsd: 1,
+    monthlyLimitUsd: 10,
+    unknownCostCalls: 0,
+    topThisMonth: [] as { label: string; usd: number }[],
+  };
+
+  // 金額だけでは多いか少ないか判断できない。上限に対する割合を必ず出す。
+  it('shows spend against the limit, not just the amount', () => {
+    const text = renderCost(base);
+    expect(text).toContain('$0.0123');
+    expect(text).toContain('$1.0000');
+    expect(text).toContain('1%');
+    expect(text).toContain('5%');
+  });
+
+  it('lists what the month was spent on', () => {
+    const text = renderCost({
+      ...base,
+      topThisMonth: [
+        { label: 'minimax/MiniMax-M3', usd: 0.4 },
+        { label: 'minimax/speech-2.8-hd', usd: 0.05 },
+      ],
+    });
+    expect(text).toContain('minimax/MiniMax-M3');
+    expect(text).toContain('speech-2.8-hd');
+  });
+
+  // 価格表に無い呼び出しを黙って落とすと、実際より安く見える。
+  it('warns when some calls could not be priced', () => {
+    const text = renderCost({ ...base, unknownCostCalls: 3 });
+    expect(text).toContain('未计价');
+    expect(text).toContain('3');
+  });
+
+  it('says nothing about unpriced calls when there are none', () => {
+    expect(renderCost(base)).not.toContain('未计价');
+  });
+
+  it('does not divide by zero when no limit is set', () => {
+    const text = renderCost({ ...base, dailyLimitUsd: 0, monthlyLimitUsd: 0 });
+    expect(text).toContain('—');
+    expect(text).not.toContain('Infinity');
+    expect(text).not.toContain('NaN');
   });
 });

@@ -247,3 +247,48 @@ export function renderDaily(summary: DailySummary): string {
   lines.push('/kana 练假名　/vocab 练单词　/review 只复习');
   return lines.join('\n');
 }
+
+// ---------- 費用 ----------
+
+export interface CostView {
+  readonly todayUsd: number;
+  readonly monthUsd: number;
+  readonly dailyLimitUsd: number;
+  readonly monthlyLimitUsd: number;
+  readonly unknownCostCalls: number;
+  readonly topThisMonth: readonly { label: string; usd: number }[];
+}
+
+/**
+ * 費用の見え方（V2 §4.4 の /cost）。
+ *
+ * 上限に対する割合を必ず添える。金額だけでは多いのか少ないのか判断できず、
+ * 見ても行動が変わらない数字になる。
+ */
+export function renderCost(view: CostView): string {
+  const pct = (used: number, limit: number): string =>
+    limit <= 0 ? '—' : `${String(Math.round((used / limit) * 100))}%`;
+  const money = (usd: number): string => `$${usd.toFixed(4)}`;
+
+  const lines = [
+    '💰 用量与成本',
+    '',
+    `今天　${money(view.todayUsd)} / ${money(view.dailyLimitUsd)}　(${pct(view.todayUsd, view.dailyLimitUsd)})`,
+    `本月　${money(view.monthUsd)} / ${money(view.monthlyLimitUsd)}　(${pct(view.monthUsd, view.monthlyLimitUsd)})`,
+  ];
+
+  if (view.topThisMonth.length > 0) {
+    lines.push('', '本月构成');
+    for (const row of view.topThisMonth) {
+      lines.push(`  ${row.label}　${money(row.usd)}`);
+    }
+  }
+  if (view.unknownCostCalls > 0) {
+    // 価格表に無い呼び出しは合計に入っていない。黙って過少に見せない。
+    lines.push(
+      '',
+      `⚠️ ${String(view.unknownCostCalls)} 次调用未计价（价格表缺该型号），未计入合计。`,
+    );
+  }
+  return lines.join('\n');
+}

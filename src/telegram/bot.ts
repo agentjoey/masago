@@ -1,6 +1,8 @@
 import { Bot, type Context } from 'grammy';
 import type { AppConfig } from '../config/index.js';
 import type { Logger } from '../observability/index.js';
+import type { SessionCommands } from '../sessions/index.js';
+import { registerCommands } from './commands/index.js';
 import { createAuth } from './middleware/auth.js';
 import { createCorrelationId } from './middleware/correlationId.js';
 import { createDedupe } from './middleware/dedupe.js';
@@ -16,6 +18,7 @@ export interface BotDeps {
   logger: Logger;
   handleUpdate(ctx: AppContext): Promise<void>;
   recordUpdate(updateId: number, payload: unknown): Promise<boolean>;
+  commands?: SessionCommands;
 }
 
 export function createBot(deps: BotDeps): Bot<AppContext> {
@@ -33,6 +36,9 @@ export function createBot(deps: BotDeps): Bot<AppContext> {
   bot.use(createCorrelationId(deps.logger));
   bot.use(createAuth(deps.config));
   bot.use(createDedupe(deps.recordUpdate));
+  if (deps.commands !== undefined) {
+    registerCommands(bot, deps.commands);
+  }
   bot.use(createRoute(deps.handleUpdate));
 
   return bot;

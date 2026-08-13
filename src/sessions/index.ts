@@ -1,4 +1,5 @@
 import {
+  createCommandHandlers,
   handleIncomingMessage,
   VOICE_NOT_ENABLED_REPLY,
   type OrchestratorDeps,
@@ -11,8 +12,27 @@ export type {
   OrchestratorDeps,
   OrchestratorResult,
   OrchestratorVoiceDeps,
+  SessionCommands,
 } from './orchestrator.js';
-export { handleIncomingMessage, VOICE_NOT_ENABLED_REPLY };
+export {
+  createCommandHandlers,
+  handleIncomingMessage,
+  VOICE_NOT_ENABLED_REPLY,
+};
+
+export {
+  HINT_REQUEST_MARKER,
+  hintLevelFor,
+  isHintRequest,
+  learnerLevel,
+  policyFor,
+} from './modes.js';
+export type {
+  ChineseUsage,
+  HintLevel,
+  LearnerLevel,
+  ModePolicy,
+} from './modes.js';
 
 export type { TextTurnDeps, TextTurnInput, TextTurnResult } from './textTurn.js';
 export { runTextTurn } from './textTurn.js';
@@ -62,6 +82,7 @@ export type {
   RunVoiceTurnDeps,
   TelegramFileRef,
   Tutor,
+  TutorHintRequest,
   TutorRequest,
   TutorResponse,
   TutorUsage,

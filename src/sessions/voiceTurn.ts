@@ -1,10 +1,13 @@
-import type {
-  CorrectionTurnHooks,
-  NewPendingIssue,
-  SurfacingDirective,
+import {
+  asRetryTurnHooks,
+  type CorrectionTurnHooks,
+  type NewPendingIssue,
+  type RetryEvaluationPreparation,
+  type SurfacingDirective,
 } from '../corrections/index.js';
 import type { Turn } from '../db/schema/session.js';
 import type { Logger } from '../observability/index.js';
+import type { HintLevel, ModePolicy } from './modes.js';
 import type { NormalizedAudio } from '../speech/normalizer.js';
 import { normalizeForStt } from '../speech/normalizer.js';
 import type { TempFileOptions, Workspace } from '../speech/tempFiles.js';
@@ -44,10 +47,17 @@ export interface OutboundVoice {
   format: string;
 }
 
+export interface TutorHintRequest {
+  level: HintLevel;
+}
+
 export interface TutorRequest {
   rawTranscript: string;
   normalizedTranscript: string;
   surfacingDirective?: SurfacingDirective;
+  retryEvaluationRequest?: RetryEvaluationPreparation;
+  modePolicy?: ModePolicy;
+  hint?: TutorHintRequest;
 }
 
 export interface TutorRetryEvaluation {
@@ -235,6 +245,14 @@ export function buildVoiceTurnSteps(
         }
         let response;
         try {
+          const retryHooks = services.corrections
+            ? asRetryTurnHooks(services.corrections)
+            : undefined;
+          const retryPreparation = retryHooks
+            ? await retryHooks.prepareRetryEvaluation({
+                sessionId: ctx.turn.sessionId,
+              })
+            : undefined;
           const directive = services.corrections
             ? await services.corrections.prepareSurfacing({
                 turnId: ctx.turn.id,
@@ -249,13 +267,33 @@ export function buildVoiceTurnSteps(
             ...(directive !== undefined
               ? { surfacingDirective: directive }
               : {}),
+            ...(retryPreparation !== undefined
+              ? { retryEvaluationRequest: retryPreparation }
+              : {}),
           });
-          await services.corrections?.finalizeSurfacing({
-            turnId: ctx.turn.id,
-            sessionId: ctx.turn.sessionId,
-            directive: directive ?? { action: 'HOLD' },
-            detectedIssues: response.detectedIssues ?? [],
-          });
+          if (retryHooks !== undefined && retryPreparation !== undefined) {
+            await retryHooks.finalizeTurnCorrections({
+              retryEvaluation: {
+                turnId: ctx.turn.id,
+                sessionId: ctx.turn.sessionId,
+                preparation: retryPreparation,
+                evaluation: response.retryEvaluation ?? null,
+              },
+              surfacing: {
+                turnId: ctx.turn.id,
+                sessionId: ctx.turn.sessionId,
+                directive: directive ?? { action: 'HOLD' },
+                detectedIssues: response.detectedIssues ?? [],
+              },
+            });
+          } else {
+            await services.corrections?.finalizeSurfacing({
+              turnId: ctx.turn.id,
+              sessionId: ctx.turn.sessionId,
+              directive: directive ?? { action: 'HOLD' },
+              detectedIssues: response.detectedIssues ?? [],
+            });
+          }
         } catch (cause) {
           await recordFailedCall(services, 'llm', {
             name: services.tutor.name ?? 'llm',

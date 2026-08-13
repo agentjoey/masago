@@ -2,9 +2,11 @@ import { sql } from 'drizzle-orm';
 import { InputFile } from 'grammy';
 import { createAnthropicClient, createMinimalTutor } from './agent/index.js';
 import { config } from './config/index.js';
+import { createCorrectionTurnHooks } from './corrections/index.js';
 import { closeDb, db, telegramUpdatesRepo } from './db/index.js';
 import { createLogger } from './observability/index.js';
 import {
+  createCommandHandlers,
   createHandleUpdate,
   type IncomingMessageContext,
   type OrchestratorVoiceDeps,
@@ -54,10 +56,16 @@ const tutor: Tutor = createMinimalTutor({
 
 const usageRecorder = createRecorder({ executor: db, logger });
 
+const corrections = createCorrectionTurnHooks({
+  executor: db,
+  config: config.correction,
+});
+
 const voice: OrchestratorVoiceDeps = {
   stt,
   tts,
   tutor,
+  corrections,
   createDownloader: (api, meta) =>
     createVoiceDownloader(
       {
@@ -73,12 +81,17 @@ const voice: OrchestratorVoiceDeps = {
   recordUsage: (input) => recordUsage(usageRecorder, input),
 };
 
-const handleMessage = createHandleUpdate({
+const orchestratorDeps = {
   config,
   executor: db,
   logger,
+  tutor,
+  corrections,
   voice,
-});
+};
+
+const handleMessage = createHandleUpdate(orchestratorDeps);
+const sessionCommands = createCommandHandlers(orchestratorDeps);
 
 function adaptContext(ctx: AppContext): IncomingMessageContext {
   return {
@@ -131,6 +144,7 @@ const bot = createBot({
     const result = await telegramUpdatesRepo.insertIfAbsent(db, updateId, payload);
     return result.inserted;
   },
+  commands: sessionCommands,
 });
 
 onShutdown(() => bot.stop());

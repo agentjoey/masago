@@ -5,6 +5,9 @@ export {
   type AnthropicMessagesLike,
 } from './llm/index.js';
 export {
+  buildHintRequestText,
+  buildModePolicyText,
+  buildRetryEvaluationText,
   buildSurfacingDirectiveText,
   createMinimalTutor,
   DEFAULT_MAX_TOKENS,

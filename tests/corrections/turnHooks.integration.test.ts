@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { afterAll, describe, expect, it } from 'vitest';
 import type {
   CorrectionTurnHooks,
@@ -101,6 +101,11 @@ async function allIssues(sessionId: string) {
 }
 
 afterAll(async () => {
+  if (createdLearnerIds.length > 0) {
+    await db
+      .delete(schema.learningEvents)
+      .where(inArray(schema.learningEvents.learnerId, createdLearnerIds));
+  }
   for (const sessionId of createdSessionIds) {
     await db
       .delete(schema.detectedIssues)
@@ -251,5 +256,169 @@ describe('correction turn hooks wiring', () => {
       'wire-original-2',
       'wire-original-3',
     ]);
+  });
+});
+
+describe('retry evaluation closes the loop', () => {
+  async function eventsFor(learnerId: string) {
+    return db
+      .select()
+      .from(schema.learningEvents)
+      .where(eq(schema.learningEvents.learnerId, learnerId));
+  }
+
+  async function surfaceWithRetryRequested(
+    hooks: ReturnType<typeof createCorrectionTurnHooks>,
+    sessionId: string,
+  ) {
+    await simulateTurn(hooks, sessionId, 1, [issueFor(1)]);
+    const d2 = await simulateTurn(hooks, sessionId, 2, [issueFor(2)]);
+    if (d2.action !== 'SURFACE') {
+      throw new Error('Coach turn 2 must SURFACE the pending issue');
+    }
+    expect(d2.requestRetry).toBe(true);
+    const preparation = await hooks.prepareRetryEvaluation({ sessionId });
+    if (preparation === undefined) {
+      throw new Error('surfaced issue must be awaiting retry');
+    }
+    expect(preparation.issues).toHaveLength(1);
+    return preparation;
+  }
+
+  it('writes SUCCEEDED and a deduped RETRY_SUCCEEDED event in the same transaction as the surfacing writes', { timeout: 60000 }, async () => {
+    const { sessionId, learnerId } = await createSession('COACH');
+    const hooks = createCorrectionTurnHooks({
+      executor: db,
+      config: DEFAULT_CONFIG,
+    });
+    const preparation = await surfaceWithRetryRequested(hooks, sessionId);
+
+    messageId += 1;
+    const turn3 = await turnsRepo.create(db, {
+      sessionId,
+      telegramMessageId: messageId,
+      inputType: 'TEXT',
+      rawTranscript: 'retry attempt',
+    });
+    const finalize = () =>
+      hooks.finalizeTurnCorrections({
+        retryEvaluation: {
+          turnId: turn3.id,
+          sessionId,
+          preparation,
+          evaluation: { succeeded: true, feedback: '良くなりました' },
+        },
+        surfacing: {
+          turnId: turn3.id,
+          sessionId,
+          directive: { action: 'HOLD' },
+          detectedIssues: [issueFor(3)],
+        },
+      });
+    await finalize();
+
+    const retried = (await allIssues(sessionId)).find(
+      (row) => row.original === 'wire-original-1',
+    );
+    expect(retried?.retryStatus).toBe('SUCCEEDED');
+    // 同事务内的其它 corrections 写入也一并落库
+    expect(
+      (await allIssues(sessionId)).some(
+        (row) => row.original === 'wire-original-3',
+      ),
+    ).toBe(true);
+
+    const events = await eventsFor(learnerId);
+    expect(events).toHaveLength(1);
+    const event = events[0];
+    if (event === undefined || retried === undefined) {
+      throw new Error('expected one RETRY_SUCCEEDED event');
+    }
+    expect(event.eventType).toBe('RETRY_SUCCEEDED');
+    expect(event.turnId).toBe(turn3.id);
+    expect(event.dedupeKey).toBe(`retry_succeeded:${retried.id}`);
+    expect(event.evidence).toMatchObject({
+      issueId: retried.id,
+      knowledgeKey: retried.knowledgeKey,
+      feedback: '良くなりました',
+    });
+
+    // 同一 turn 重复处理不产生重复事件
+    await finalize();
+    expect(await eventsFor(learnerId)).toHaveLength(1);
+  });
+
+  it('marks FAILED and never emits a success event when the retry fails', { timeout: 60000 }, async () => {
+    const { sessionId, learnerId } = await createSession('COACH');
+    const hooks = createCorrectionTurnHooks({
+      executor: db,
+      config: DEFAULT_CONFIG,
+    });
+    const preparation = await surfaceWithRetryRequested(hooks, sessionId);
+
+    messageId += 1;
+    const turn3 = await turnsRepo.create(db, {
+      sessionId,
+      telegramMessageId: messageId,
+      inputType: 'TEXT',
+      rawTranscript: 'failed retry attempt',
+    });
+    await hooks.finalizeTurnCorrections({
+      retryEvaluation: {
+        turnId: turn3.id,
+        sessionId,
+        preparation,
+        evaluation: { succeeded: false, feedback: 'もう一度' },
+      },
+      surfacing: {
+        turnId: turn3.id,
+        sessionId,
+        directive: { action: 'HOLD' },
+        detectedIssues: [],
+      },
+    });
+
+    const retried = (await allIssues(sessionId)).find(
+      (row) => row.original === 'wire-original-1',
+    );
+    expect(retried?.retryStatus).toBe('FAILED');
+    expect(await eventsFor(learnerId)).toHaveLength(0);
+  });
+
+  it('leaves the retry pending and emits no event when the model returns no evaluation', { timeout: 60000 }, async () => {
+    const { sessionId, learnerId } = await createSession('COACH');
+    const hooks = createCorrectionTurnHooks({
+      executor: db,
+      config: DEFAULT_CONFIG,
+    });
+    const preparation = await surfaceWithRetryRequested(hooks, sessionId);
+
+    messageId += 1;
+    const turn3 = await turnsRepo.create(db, {
+      sessionId,
+      telegramMessageId: messageId,
+      inputType: 'TEXT',
+      rawTranscript: 'unrelated reply',
+    });
+    await hooks.finalizeTurnCorrections({
+      retryEvaluation: {
+        turnId: turn3.id,
+        sessionId,
+        preparation,
+        evaluation: null,
+      },
+      surfacing: {
+        turnId: turn3.id,
+        sessionId,
+        directive: { action: 'HOLD' },
+        detectedIssues: [],
+      },
+    });
+
+    const retried = (await allIssues(sessionId)).find(
+      (row) => row.original === 'wire-original-1',
+    );
+    expect(retried?.retryStatus).toBe('REQUESTED');
+    expect(await eventsFor(learnerId)).toHaveLength(0);
   });
 });

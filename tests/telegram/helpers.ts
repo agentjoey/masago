@@ -118,3 +118,25 @@ export function voiceUpdate(options: {
     },
   };
 }
+
+// grammY 的 bot.command() 依赖 bot_command entity 识别命令；
+// textUpdate() 不带 entities，造命令消息必须用这个构造函数。
+export function commandUpdate(options: {
+  updateId: number;
+  userId: number;
+  messageId: number;
+  command: string;
+}): Update {
+  const text = `/${options.command}`;
+  return {
+    update_id: options.updateId,
+    message: {
+      message_id: options.messageId,
+      date: 1_700_000_000,
+      chat: { id: options.userId, type: 'private', first_name: 'CI' },
+      from: { id: options.userId, is_bot: false, first_name: 'CI' },
+      text,
+      entities: [{ type: 'bot_command', offset: 0, length: text.length }],
+    },
+  };
+}

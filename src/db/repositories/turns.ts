@@ -1,5 +1,5 @@
-import { eq, sql } from 'drizzle-orm';
-import { turns, type NewTurn, type Turn } from '../schema/session.js';
+import { and, eq, sql } from 'drizzle-orm';
+import { detectedIssues, turns, type NewTurn, type Turn } from '../schema/session.js';
 import type { turnStatus } from '../schema/enums.js';
 import type { Executor } from './executor.js';
 
@@ -65,4 +65,48 @@ export async function findByTelegramMessageId(
     .where(eq(turns.telegramMessageId, telegramMessageId))
     .limit(1);
   return row;
+}
+
+export async function countSessionTurnsSinceLastSurface(
+  tx: Executor,
+  sessionId: string,
+): Promise<number> {
+  const result = await tx.execute<{ count: number }>(sql`
+    select count(*)::int as count
+    from ${turns}
+    where ${turns.sessionId} = ${sessionId}
+      and ${turns.createdAt} > coalesce(
+        (
+          select max(${detectedIssues.surfacedAt})
+          from ${detectedIssues}
+          where ${detectedIssues.sessionId} = ${sessionId}
+        ),
+        '-infinity'::timestamptz
+      )
+  `);
+  const row = result.rows[0];
+  if (row === undefined) {
+    throw new Error('countSessionTurnsSinceLastSurface returned no row');
+  }
+  return row.count;
+}
+
+export async function countByTranscript(
+  tx: Executor,
+  sessionId: string,
+  rawTranscript: string,
+): Promise<number> {
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(turns)
+    .where(
+      and(
+        eq(turns.sessionId, sessionId),
+        eq(turns.rawTranscript, rawTranscript),
+      ),
+    );
+  if (row === undefined) {
+    throw new Error('countByTranscript returned no row');
+  }
+  return row.count;
 }

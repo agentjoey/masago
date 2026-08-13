@@ -1,15 +1,14 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import type { sessionMode } from '../schema/enums.js';
+import type { retryStatus } from '../schema/enums.js';
 import {
   detectedIssues,
   sessions,
-  turns,
   type DetectedIssue,
   type NewDetectedIssue,
 } from '../schema/session.js';
 import type { Executor } from './executor.js';
 
-type SessionMode = (typeof sessionMode.enumValues)[number];
+type RetryStatus = (typeof retryStatus.enumValues)[number];
 type Importance = DetectedIssue['importance'];
 
 export async function insertMany(
@@ -95,43 +94,40 @@ export async function countPendingByImportance(
   return result;
 }
 
-export interface SessionCorrectionContext {
-  learnerId: string;
-  mode: SessionMode;
+export async function listAwaitingRetry(
+  tx: Executor,
+  learnerId: string,
+): Promise<DetectedIssue[]> {
+  const rows = await tx
+    .select({ issue: detectedIssues })
+    .from(detectedIssues)
+    .innerJoin(sessions, eq(detectedIssues.sessionId, sessions.id))
+    .where(
+      and(
+        eq(sessions.learnerId, learnerId),
+        eq(detectedIssues.retryStatus, 'REQUESTED'),
+      ),
+    )
+    .orderBy(asc(detectedIssues.surfacedAt), asc(detectedIssues.id));
+  return rows.map((row) => row.issue);
 }
 
-export async function getSessionCorrectionContext(
+export async function setRetryStatus(
   tx: Executor,
-  sessionId: string,
-): Promise<SessionCorrectionContext | undefined> {
-  const [row] = await tx
-    .select({ learnerId: sessions.learnerId, mode: sessions.mode })
-    .from(sessions)
-    .where(eq(sessions.id, sessionId))
-    .limit(1);
-  return row;
-}
-
-export async function countSessionTurnsSinceLastSurface(
-  tx: Executor,
-  sessionId: string,
-): Promise<number> {
-  const result = await tx.execute<{ count: number }>(sql`
-    select count(*)::int as count
-    from ${turns}
-    where ${turns.sessionId} = ${sessionId}
-      and ${turns.createdAt} > coalesce(
-        (
-          select max(${detectedIssues.surfacedAt})
-          from ${detectedIssues}
-          where ${detectedIssues.sessionId} = ${sessionId}
-        ),
-        '-infinity'::timestamptz
-      )
-  `);
-  const row = result.rows[0];
-  if (row === undefined) {
-    throw new Error('countSessionTurnsSinceLastSurface returned no row');
+  ids: string[],
+  status: RetryStatus,
+): Promise<DetectedIssue[]> {
+  if (ids.length === 0) {
+    return [];
   }
-  return row.count;
+  return tx
+    .update(detectedIssues)
+    .set({ retryStatus: status })
+    .where(
+      and(
+        inArray(detectedIssues.id, ids),
+        eq(detectedIssues.retryStatus, 'REQUESTED'),
+      ),
+    )
+    .returning();
 }

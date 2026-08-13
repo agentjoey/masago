@@ -1,4 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
+import type { PendingIssue } from '../corrections/index.js';
+import type { HintLevel, ModePolicy } from '../sessions/modes.js';
 import type {
   Tutor,
   TutorRequest,
@@ -82,6 +84,50 @@ export const REPAIR_INSTRUCTION =
 
 export const HOLD_DIRECTIVE_TEXT =
   '提示指示: HOLD。通常どおり会話を続けてください。検出した問題は detectedIssues にのみ記録し、reply.japanese の中で指摘・訂正・推奨表現の提示をしてはいけません。correctionCard は null にしてください。';
+
+const CHINESE_USAGE_DIRECTIVE: Record<ModePolicy['chineseAllowed'], string> = {
+  none: '中国語ポリシー: none。中国語は一切使わないでください。reply.translation は必ず null にし、説明も含めてすべて日本語で行ってください。',
+  'nuance-only':
+    '中国語ポリシー: nuance-only。中国語の使用は複雑なニュアンスの説明に限定し、それ以外はすべて日本語で返答してください。',
+  'grammar-ok':
+    '中国語ポリシー: grammar-ok。文法の説明には簡潔な中国語を使っても構いませんが、会話本文は日本語にしてください。',
+  'as-needed':
+    '中国語ポリシー: as-needed。学習者の理解を助けるため、必要に応じて短い中国語の説明を添えても構いません。',
+};
+
+const IMMERSIVE_DIRECTIVE =
+  'このセッションは全日語イマージョンです。学習者が困っていても、原則として中国語に逃げず、平易な日本語で説明し直してください。';
+
+export function buildModePolicyText(policy: ModePolicy): string {
+  const lines = [CHINESE_USAGE_DIRECTIVE[policy.chineseAllowed]];
+  if (policy.immersive) {
+    lines.push(IMMERSIVE_DIRECTIVE);
+  }
+  return lines.join('\n');
+}
+
+const HINT_LEVEL_DIRECTIVE: Record<HintLevel, string> = {
+  1: '学習者が「ヒント」を求めています。中国語は使わず、日本語で短いヒントを一つだけ返してください。答えそのものは教えないでください。',
+  2: '学習者は前のヒントでもまだ解決できていません。キーワードまたは文型の枠組みを日本語で示してください。答えそのものは教えないでください。',
+  3: '学習者は繰り返しつまずいています。最後の手段として、短い中国語の説明を一文だけ添えても構いません。それ以外は日本語で返答してください。',
+};
+
+export function buildHintRequestText(level: HintLevel): string {
+  return HINT_LEVEL_DIRECTIVE[level];
+}
+
+export function buildRetryEvaluationText(issues: PendingIssue[]): string {
+  const payload = issues.map((issue) => ({
+    id: issue.id,
+    original: issue.original,
+    recommended: issue.recommended,
+    knowledgeKey: issue.knowledgeKey,
+  }));
+  return [
+    '前のターンで、次の問題について推奨表現での言い直しを求めました。今回の学習者の発話がこれらの問題について改善したかを判定し、retryEvaluation に結果を入れてください。改善が見られない場合は succeeded を false にしてください。',
+    JSON.stringify(payload, null, 2),
+  ].join('\n');
+}
 
 export function buildSurfacingDirectiveText(
   directive: NonNullable<TutorRequest['surfacingDirective']>,
@@ -167,17 +213,35 @@ function buildSystem(
 }
 
 function buildUserMessage(request: TutorRequest): string {
-  const parts = [
+  const parts: string[] = [];
+  if (request.modePolicy !== undefined) {
+    parts.push('<mode_policy>', buildModePolicyText(request.modePolicy), '</mode_policy>');
+  }
+  parts.push(
     '<learner_input>',
     `<raw_transcript>${request.rawTranscript}</raw_transcript>`,
     `<normalized_transcript>${request.normalizedTranscript}</normalized_transcript>`,
     '</learner_input>',
-  ];
+  );
   if (request.surfacingDirective !== undefined) {
     parts.push(
       '<correction_directive>',
       buildSurfacingDirectiveText(request.surfacingDirective),
       '</correction_directive>',
+    );
+  }
+  if (request.retryEvaluationRequest !== undefined) {
+    parts.push(
+      '<retry_evaluation_request>',
+      buildRetryEvaluationText(request.retryEvaluationRequest.issues),
+      '</retry_evaluation_request>',
+    );
+  }
+  if (request.hint !== undefined) {
+    parts.push(
+      '<hint_request>',
+      buildHintRequestText(request.hint.level),
+      '</hint_request>',
     );
   }
   return parts.join('\n');

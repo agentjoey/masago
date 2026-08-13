@@ -1,6 +1,10 @@
-import type { CorrectionTurnHooks } from '../corrections/index.js';
+import {
+  asRetryTurnHooks,
+  type CorrectionTurnHooks,
+} from '../corrections/index.js';
 import type { Executor } from '../db/index.js';
 import { turnsRepo } from '../db/index.js';
+import type { HintLevel, ModePolicy } from './modes.js';
 import type { Tutor } from './voiceTurn.js';
 
 export interface TextTurnDeps {
@@ -15,6 +19,8 @@ export interface TextTurnInput {
   text: string;
   explicitRequest?: boolean;
   sessionEnding?: boolean;
+  modePolicy?: ModePolicy;
+  hintLevel?: HintLevel;
 }
 
 export interface TextTurnResult {
@@ -35,6 +41,10 @@ export async function runTextTurn(
 
   let reply: string;
   if (deps.tutor !== undefined && deps.corrections !== undefined) {
+    const retryHooks = asRetryTurnHooks(deps.corrections);
+    const retryPreparation = retryHooks
+      ? await retryHooks.prepareRetryEvaluation({ sessionId: input.sessionId })
+      : undefined;
     const directive = await deps.corrections.prepareSurfacing({
       turnId: turn.id,
       sessionId: input.sessionId,
@@ -49,13 +59,39 @@ export async function runTextTurn(
       rawTranscript: input.text,
       normalizedTranscript: input.text,
       surfacingDirective: directive,
+      ...(retryPreparation !== undefined
+        ? { retryEvaluationRequest: retryPreparation }
+        : {}),
+      ...(input.modePolicy !== undefined
+        ? { modePolicy: input.modePolicy }
+        : {}),
+      ...(input.hintLevel !== undefined
+        ? { hint: { level: input.hintLevel } }
+        : {}),
     });
-    await deps.corrections.finalizeSurfacing({
-      turnId: turn.id,
-      sessionId: input.sessionId,
-      directive,
-      detectedIssues: response.detectedIssues ?? [],
-    });
+    if (retryHooks !== undefined && retryPreparation !== undefined) {
+      await retryHooks.finalizeTurnCorrections({
+        retryEvaluation: {
+          turnId: turn.id,
+          sessionId: input.sessionId,
+          preparation: retryPreparation,
+          evaluation: response.retryEvaluation ?? null,
+        },
+        surfacing: {
+          turnId: turn.id,
+          sessionId: input.sessionId,
+          directive,
+          detectedIssues: response.detectedIssues ?? [],
+        },
+      });
+    } else {
+      await deps.corrections.finalizeSurfacing({
+        turnId: turn.id,
+        sessionId: input.sessionId,
+        directive,
+        detectedIssues: response.detectedIssues ?? [],
+      });
+    }
     reply = response.correctionCard
       ? `${response.replyText}\n\n${response.correctionCard}`
       : response.replyText;

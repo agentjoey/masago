@@ -78,7 +78,7 @@ describe('createVoiceDownloader', () => {
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'jp-coach-voice-'));
+    dir = await mkdtemp(join(tmpdir(), 'masago-voice-'));
   });
 
   afterEach(async () => {

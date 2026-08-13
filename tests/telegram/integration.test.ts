@@ -235,8 +235,8 @@ describe.skipIf(!HAS_DB)('telegram W3 integration (real database)', () => {
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
 
-    const ttsOutputDir = await mkdtemp(join(tmpdir(), 'jp-coach-it-tts-'));
-    const workspaceBase = await mkdtemp(join(tmpdir(), 'jp-coach-it-ws-'));
+    const ttsOutputDir = await mkdtemp(join(tmpdir(), 'masago-it-tts-'));
+    const workspaceBase = await mkdtemp(join(tmpdir(), 'masago-it-ws-'));
     try {
       const logger = helpers.fakeLogger();
       const stt = new MockSttProvider({ transcript: '昨日友達と映画を見るました' });

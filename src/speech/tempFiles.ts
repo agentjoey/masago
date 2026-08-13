@@ -3,7 +3,7 @@ import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const DEFAULT_BASE_DIR = join(tmpdir(), 'japanese-agent');
+const DEFAULT_BASE_DIR = join(tmpdir(), 'masago');
 
 export interface TempFileOptions {
   baseDir?: string;

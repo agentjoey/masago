@@ -207,7 +207,7 @@ describe('turnRunner', () => {
   let outputDir: string;
 
   beforeEach(async () => {
-    outputDir = await mkdtemp(join(tmpdir(), 'jp-coach-w5-'));
+    outputDir = await mkdtemp(join(tmpdir(), 'masago-w5-'));
   });
 
   afterEach(async () => {

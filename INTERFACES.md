@@ -1,4 +1,4 @@
-# INTERFACES · jp-coach 模块契约
+# INTERFACES · masago 模块契约
 
 *Orchestrator 看守。Worker 不得擅自修改本文件；需要变更接口时在交付说明里提出，由 orchestrator 决定。*
 

@@ -31,7 +31,7 @@ export function onShutdown(hook: ShutdownHook): void {
 }
 
 async function shutdown(signal: string): Promise<void> {
-  logger.info('jp-coach shutting down', { signal });
+  logger.info('masago shutting down', { signal });
   for (const hook of shutdownHooks) {
     try {
       await hook();
@@ -158,7 +158,7 @@ async function main(): Promise<void> {
     ttsProvider: tts.name,
     ttsModel: tts.model,
   });
-  logger.info('jp-coach started', { version: pkg.version });
+  logger.info('masago started', { version: pkg.version });
   await bot.start({
     onStart: (me) => {
       logger.info('telegram bot connected', { username: me.username });

@@ -220,8 +220,8 @@ describe('voiceTurn pipeline', () => {
   let logger: Logger & { records: LogRecord[] };
 
   beforeEach(async () => {
-    baseDir = await mkdtemp(join(tmpdir(), 'jp-coach-w6-ws-'));
-    ttsOutputDir = await mkdtemp(join(tmpdir(), 'jp-coach-w6-tts-'));
+    baseDir = await mkdtemp(join(tmpdir(), 'masago-w6-ws-'));
+    ttsOutputDir = await mkdtemp(join(tmpdir(), 'masago-w6-tts-'));
     logger = fakeLogger();
   });
 

@@ -441,6 +441,37 @@ Railway Hobby $5/月含 $5 额度，常驻进程实际约 $5–10/月。
 **Neon autoscaling 上限需压到 0.25 CU。** 新项目默认 `0.25–2 CU`，而 §9.1 的 18 倍余量是按 0.25 CU 计算的；上限 2 CU 意味着忙时可能烧 8 倍算力，余量缩至约 2.25 倍。单用户负载通常跑不满，但一次跑飞的查询就可能顶上去。
 
 **FFmpeg 在 V1 不再是必需依赖**（STT 退出后无需 remux），但保留在构建配置中以备 V2。
+由 `VOICE_INPUT_ENABLED` 控制：默认 false，只有开启语音输入时启动才要求 ffmpeg。
+
+## 10.1 部署实况（2026-08-14 完成）
+
+| 项 | 值 |
+|---|---|
+| Railway 项目 | `masago` / `64cb3bf1-3ef7-461e-b2e6-6b460fbe7966` |
+| 服务 | `masago` / `b3831a18-df05-4bd9-bff1-6c9eaf3e730e` |
+| 区域 | `sin`（新加坡，与 Neon `ap-southeast-1` 同区）|
+| 健康检查 | `/health`，端口由 Railway 注入（实测 8080）|
+| 构建 | Railpack，`pnpm build` → `pnpm start`（`dist/src/app.js`）|
+
+**区域已实测确认，不是"设了就算"**：Railway API 里 `region` 字段读回来永远是
+null（值存在不可查询的 `multiRegionConfig` 中），所以改为在启动时测量
+`select 1` 的往返时间——温机后取中位数，**部署侧 4ms，本机（同在 ap-southeast-1）
+56ms**。同区才可能是个位数。`railway service list` 亦显示 `region: sin`。
+
+> 一发目的往返包含 TLS 握手与建连（实测 76ms），拿它判断地域会得出相反结论。
+
+**目前是 `railway up` 直传，不是 GitHub 自动部署。** Railway 的 GitHub App
+尚未获得 `agentjoey/masago` 的访问权（部署时报 `Repository not found or is not
+accessible`），授权属于账号级操作。授权后即可恢复 `GitHub main → Railway` 的
+自动部署链路。
+
+**部署时的一处教训**：把 `.env` 按行 `KEY=VALUE` 切开灌进 Railway 是错的——
+Node 的 `--env-file` 会剥掉行内注释，而朴素切分不会。四个变量因此带上了
+`# <<< FILL ME ...` 尾巴，其中 `TELEGRAM_BOT_TOKEN` 与 `LLM_API_KEY`
+都能通过 `z.string().min(1)`，只会在运行时以难以定位的方式失败；
+只有数字型的 `ALLOWED_TELEGRAM_USER_ID` 当场报错才暴露了问题。
+正确做法是用 Node 自己解析：`node --env-file=.env -e 'process.stdout.write(...)'`
+取值，再经 stdin 灌入，与本地行为逐一比对（已核对 37/37 一致）。
 
 ---
 

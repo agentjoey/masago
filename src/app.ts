@@ -10,6 +10,9 @@ import { createCorrectionTurnHooks } from './corrections/index.js';
 import { closeDb, db, telegramUpdatesRepo, usageRecordsRepo } from './db/index.js';
 import { runMigrations } from './db/migrate.js';
 import { createKnowledgeKeyStore } from './db/repositories/knowledgeItems.js';
+import { kanaOfKey } from './curriculum/kana.js';
+import { conversationLevel } from './curriculum/stage.js';
+import * as reviewQueueRepo from './db/repositories/reviewQueue.js';
 import { createKanaCommands } from './learning/kanaCommands.js';
 import { ensureKanaSeeded } from './learning/kanaSeed.js';
 import { ensureVocabSeeded } from './learning/vocabSeed.js';
@@ -109,6 +112,13 @@ const orchestratorDeps = {
   tutor,
   corrections,
   voice,
+  // 水準は課程の進み具合から出す。プロフィールの文字列ではなく、
+  // 実際に習った仮名の数で決める——読めない人に日本語で返さないため。
+  resolveLevel: async (learnerId: string) => {
+    const keys = await reviewQueueRepo.listIntroducedKeys(db, learnerId, 'KANA');
+    const count = keys.filter((key) => kanaOfKey(key) !== undefined).length;
+    return conversationLevel(count);
+  },
 };
 
 const handleMessage = createHandleUpdate(orchestratorDeps);

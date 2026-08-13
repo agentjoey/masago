@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { KANA } from '../../src/curriculum/kana.js';
 import {
+  conversationLevel,
   planVocabLesson,
   SEION_COUNT,
   stageOf,
@@ -134,5 +135,17 @@ describe('vocabProgress', () => {
     expect(affix).toBeDefined();
     if (affix === undefined) return;
     expect(vocabProgress([affix.id]).introduced).toBe(0);
+  });
+});
+
+describe('conversationLevel', () => {
+  it('is zero until the seion are readable', () => {
+    expect(conversationLevel(0)).toBe('zero');
+    expect(conversationLevel(45)).toBe('zero');
+  });
+
+  it('becomes beginner once the seion are done', () => {
+    expect(conversationLevel(46)).toBe('beginner');
+    expect(conversationLevel(104)).toBe('beginner');
   });
 });

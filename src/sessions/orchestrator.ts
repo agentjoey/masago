@@ -18,6 +18,7 @@ import {
   isHintRequest,
   policyFor,
   type HintLevel,
+  type LearnerLevel,
 } from './modes.js';
 import { runTextTurn } from './textTurn.js';
 import {
@@ -55,6 +56,13 @@ export interface OrchestratorDeps {
   tutor?: Tutor;
   corrections?: CorrectionTurnHooks;
   voice?: OrchestratorVoiceDeps;
+  /**
+   * 課程の進み具合から水準を出す。渡されればプロフィールより優先する。
+   *
+   * ここで注入にしているのは、sessions が復習キューの形を知らずに
+   * 済ませるため。何を根拠に水準を決めるかは learning 側の判断。
+   */
+  resolveLevel?: (learnerId: string) => Promise<LearnerLevel | undefined>;
 }
 
 interface IncomingMessageBase {
@@ -273,7 +281,13 @@ export async function handleIncomingMessage(
   }
 
   const text = input.text ?? '';
-  const policy = policyFor(session.mode, learner, deps.config.correction);
+  const level = await deps.resolveLevel?.(learner.id);
+  const policy = policyFor(
+    session.mode,
+    learner,
+    deps.config.correction,
+    level,
+  );
 
   let hintLevel: HintLevel | undefined;
   if (policy.hintLadder && isHintRequest(text)) {

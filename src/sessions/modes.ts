@@ -1,8 +1,23 @@
 import type { SessionMode, SurfacingConfig } from '../corrections/index.js';
 import type { LearnerProfile } from '../db/schema/learner.js';
 
-export type ChineseUsage = 'none' | 'nuance-only' | 'grammar-ok' | 'as-needed';
-export type LearnerLevel = 'beginner' | 'intermediate' | 'advanced';
+export type ChineseUsage =
+  | 'none'
+  | 'nuance-only'
+  | 'grammar-ok'
+  | 'as-needed'
+  /** 中国語が主。日本語は短い一言だけ添える。 */
+  | 'primary';
+
+/**
+ * `zero` は「まだ仮名が読めない」段階。
+ *
+ * これが無いと、初日の学習者に日本語だけの返事が届く（実測：初回の
+ * 「Hi」に対して全文日本語が返り、一文字も読めなかった）。beginner の
+ * as-needed は「必要なら中国語を添えてもよい」でしかなく、本文は日本語の
+ * ままなので、読めない人には何も伝わらない。
+ */
+export type LearnerLevel = 'zero' | 'beginner' | 'intermediate' | 'advanced';
 export type HintLevel = 1 | 2 | 3;
 
 export interface ModePolicy {
@@ -29,16 +44,21 @@ const CHINESE_USAGE_BY_MODE: Record<
   Record<LearnerLevel, ChineseUsage>
 > = {
   CONVERSATION: {
+    zero: 'primary',
     beginner: 'as-needed',
     intermediate: 'grammar-ok',
     advanced: 'nuance-only',
   },
   COACH: {
+    zero: 'primary',
     beginner: 'as-needed',
     intermediate: 'grammar-ok',
     advanced: 'nuance-only',
   },
   CHALLENGE: {
+    // 仮名が読めない段階では全日語没入は成立しない。挑戦モードでも
+    // 読めるものを出す。
+    zero: 'primary',
     beginner: 'none',
     intermediate: 'none',
     advanced: 'none',
@@ -90,6 +110,14 @@ export function policyFor(
   mode: SessionMode,
   profile: LearnerProfile,
   config?: SurfacingConfig,
+  /**
+   * 課程の進み具合から出した水準。渡された場合はプロフィールより優先する。
+   *
+   * 水準は本来「何をどこまで習ったか」の関数で、プロフィールに書いた文字列
+   * ではない。仮名を一つも知らない人に日本語で返せば、そこに何が書いてあっても
+   * 読めない。
+   */
+  levelOverride?: LearnerLevel,
 ): ModePolicy {
   const traits = MODE_TRAITS[mode];
   const surfaceAfterTurns =
@@ -100,7 +128,8 @@ export function policyFor(
         : config.surfaceAfterTurnsConversation;
   return {
     surfaceAfterTurns,
-    chineseAllowed: CHINESE_USAGE_BY_MODE[mode][learnerLevel(profile)],
+    chineseAllowed:
+      CHINESE_USAGE_BY_MODE[mode][levelOverride ?? learnerLevel(profile)],
     hintLadder: traits.hintLadder,
     immersive: traits.immersive,
   };

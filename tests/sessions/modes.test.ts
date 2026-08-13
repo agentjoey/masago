@@ -137,3 +137,38 @@ describe('hint ladder', () => {
     expect(hintLevelFor(5)).toBe(3);
   });
 });
+
+describe('zero level — 还读不出假名的人', () => {
+  const profile = { levels: null } as unknown as Parameters<typeof policyFor>[1];
+
+  // 实测：初日に「Hi」と送ったら全文日本語が返り、一文字も読めなかった。
+  // beginner の as-needed は「必要なら中国語を添えてもよい」でしかない。
+  it('makes chinese the main language, not an optional aside', () => {
+    expect(
+      policyFor('CONVERSATION', profile, undefined, 'zero').chineseAllowed,
+    ).toBe('primary');
+    expect(
+      policyFor('CONVERSATION', profile, undefined, 'beginner').chineseAllowed,
+    ).toBe('as-needed');
+  });
+
+  it('applies in coach mode too', () => {
+    expect(policyFor('COACH', profile, undefined, 'zero').chineseAllowed).toBe(
+      'primary',
+    );
+  });
+
+  // 仮名が読めない段階で全日語没入は成立しない。
+  it('overrides full immersion in challenge mode', () => {
+    expect(
+      policyFor('CHALLENGE', profile, undefined, 'zero').chineseAllowed,
+    ).toBe('primary');
+    expect(
+      policyFor('CHALLENGE', profile, undefined, 'beginner').chineseAllowed,
+    ).toBe('none');
+  });
+
+  it('falls back to the profile when no level is derived', () => {
+    expect(policyFor('CONVERSATION', profile).chineseAllowed).toBe('as-needed');
+  });
+});

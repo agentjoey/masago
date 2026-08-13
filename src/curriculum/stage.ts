@@ -87,3 +87,15 @@ export function vocabProgress(introducedIds: readonly string[]): {
     total: teachable.length,
   };
 }
+
+/**
+ * 会話で使う水準。課程の進み具合から出す。
+ *
+ * プロフィールに書いた文字列ではなく、実際に何を習ったかで決める。
+ * 清音すら終えていない人に日本語で返しても、一文字も読めない。
+ */
+export function conversationLevel(
+  introducedKanaCount: number,
+): 'zero' | 'beginner' {
+  return introducedKanaCount < SEION_COUNT ? 'zero' : 'beginner';
+}

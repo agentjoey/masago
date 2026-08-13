@@ -386,7 +386,7 @@ Neon Free 为 **100 CU-hours/project/月**，scale-to-zero 在闲置 5 分钟后
 3. Session 超时惰性判定，不做定时扫描
 4. **health check 绝不查数据库**——平台探针会让 Neon 全天候不休眠
 
-**实测（2026-08-12）**：最后查询到 compute 进入 idle 耗时 8 分 32 秒。据此典型一天约 45 分钟活跃 → 约 5.6 CU-hours/月，对 100 的额度有 18 倍余量。
+**实测（2026-08-12，旧 us-west-2 项目）**：最后查询到 compute 进入 idle 耗时 8 分 32 秒。据此典型一天约 45 分钟活跃 → 约 5.6 CU-hours/月，对 100 的额度有 18 倍余量。
 
 ## 9.2 核心表
 
@@ -422,6 +422,12 @@ GitHub main → CI（lint/typecheck/test/build/migration check）
 ```
 
 Railway Hobby $5/月含 $5 额度，常驻进程实际约 $5–10/月。
+
+**区域必须与 Neon 同区。** Neon 项目 `snowy-mouse-52341978`（MasaGo）位于 `ap-southeast-1`，**Railway 必须部署到 Southeast Asia 区**。真正影响性能的是 Railway ↔ Neon 之间的往返，不是用户 ↔ Neon；两者跨洋会把每轮的多次数据库查询放大成秒级开销。
+
+实测参考（2026-08-14，本机 Mac ↔ Neon）：同区后集成测试从 16.4s 降至 2.9s、20.1s 降至 4.8s，快 4–6 倍。这测的是开发链路，但同样的往返差异会出现在 Railway ↔ Neon 上。
+
+**Neon autoscaling 上限需压到 0.25 CU。** 新项目默认 `0.25–2 CU`，而 §9.1 的 18 倍余量是按 0.25 CU 计算的；上限 2 CU 意味着忙时可能烧 8 倍算力，余量缩至约 2.25 倍。单用户负载通常跑不满，但一次跑飞的查询就可能顶上去。
 
 **FFmpeg 在 V1 不再是必需依赖**（STT 退出后无需 remux），但保留在构建配置中以备 V2。
 

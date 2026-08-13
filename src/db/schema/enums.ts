@@ -24,6 +24,9 @@ export const turnStatus = pgEnum('turn_status', [
 ]);
 
 export const knowledgeType = pgEnum('knowledge_type', [
+  // S0 五十音。V2 §9.2 で追加。仮名は語彙でも文法でもなく、
+  // 認読・聴辨・字形識別という独自の能力軸を持つため別型にする。
+  'KANA',
   'VOCABULARY',
   'GRAMMAR',
   'EXPRESSION',

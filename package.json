@@ -14,7 +14,8 @@
     "verify:llm": "tsx --env-file=.env scripts/verify-llm.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "build:kana-audio": "tsx --env-file=.env scripts/build-kana-audio.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",

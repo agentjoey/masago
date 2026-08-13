@@ -1,0 +1,1 @@
+ALTER TYPE "public"."knowledge_type" ADD VALUE 'KANA' BEFORE 'VOCABULARY';

@@ -7,6 +7,9 @@ import { closeDb, db, telegramUpdatesRepo } from './db/index.js';
 import { createKnowledgeKeyStore } from './db/repositories/knowledgeItems.js';
 import { createKanaCommands } from './learning/kanaCommands.js';
 import { ensureKanaSeeded } from './learning/kanaSeed.js';
+import { collectReminderFacts } from './learning/reminderFacts.js';
+import { createDailyReminder } from './scheduler/index.js';
+import { partsInZone, zonedWallClockToInstant } from './scheduler/index.js';
 import { createLogger, startHealthServer } from './observability/index.js';
 import {
   createCommandHandlers,
@@ -193,12 +196,44 @@ const bot = createBot({
   kana: { commands: kanaCommands, audioDir: config.kana.audioDir },
 });
 
+const dailyReminder = createDailyReminder({
+  logger,
+  localTime: config.session.dailyReminderLocalTime,
+  timeZone: config.session.userTimezone,
+  collect: (now) => {
+    // その地域の「今日の 0 時」。サーバの UTC 日付で切ると、
+    // シンガポールの夜に学習した記録が翌日ぶんに数えられる。
+    const parts = partsInZone(now, config.session.userTimezone);
+    const dayStart = zonedWallClockToInstant(
+      { ...parts, hour: 0, minute: 0 },
+      config.session.userTimezone,
+    );
+    return collectReminderFacts(
+      {
+        executor: db,
+        telegramUserId: config.telegram.allowedUserId,
+        newPerDay: config.kana.newPerDay,
+        maxReviews: config.kana.maxReviews,
+        backlogThreshold: config.kana.backlogThreshold,
+      },
+      now,
+      dayStart,
+    );
+  },
+  send: async (text) => {
+    await bot.api.sendMessage(config.telegram.allowedUserId, text);
+  },
+});
+
 const healthServer = startHealthServer({
   port: config.server.port,
   version: pkg.version,
   logger,
 });
 
+onShutdown(() => {
+  dailyReminder.stop();
+});
 onShutdown(() => bot.stop());
 onShutdown(
   () =>
@@ -220,6 +255,7 @@ async function main(): Promise<void> {
     ttsModel: tts.model,
   });
   logger.info('masago started', { version: pkg.version });
+  dailyReminder.start();
   await startWithRetry(bot, {
     logger,
     onStart: (username) => {

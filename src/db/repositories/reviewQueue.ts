@@ -1,4 +1,4 @@
-import { and, asc, eq, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
 import {
   knowledgeItems,
   reviewQueue,
@@ -119,6 +119,29 @@ export async function countDue(
         eq(reviewQueue.learnerId, learnerId),
         lte(reviewQueue.nextReviewAt, now),
         type === undefined ? undefined : eq(knowledgeItems.type, type),
+      ),
+    );
+  return rows[0]?.count ?? 0;
+}
+
+/**
+ * `since` 以降に答えた項目の数。
+ *
+ * リマインダを出すかどうかの判断に使う。もう今日やった人に
+ * 「やりましょう」と送るのは、通知を無視する習慣を育てるだけ。
+ */
+export async function countReviewedSince(
+  tx: Executor,
+  learnerId: string,
+  since: Date,
+): Promise<number> {
+  const rows = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(reviewQueue)
+    .where(
+      and(
+        eq(reviewQueue.learnerId, learnerId),
+        gte(reviewQueue.lastReview, since),
       ),
     );
   return rows[0]?.count ?? 0;

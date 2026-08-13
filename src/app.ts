@@ -4,6 +4,7 @@ import { createAnthropicClient, createMinimalTutor } from './agent/index.js';
 import { config } from './config/index.js';
 import { createCorrectionTurnHooks } from './corrections/index.js';
 import { closeDb, db, telegramUpdatesRepo } from './db/index.js';
+import { runMigrations } from './db/migrate.js';
 import { createKnowledgeKeyStore } from './db/repositories/knowledgeItems.js';
 import { createKanaCommands } from './learning/kanaCommands.js';
 import { ensureKanaSeeded } from './learning/kanaSeed.js';
@@ -155,6 +156,11 @@ async function runStartupChecks(): Promise<{ dbRoundTripMs: number }> {
   // 一発目は TLS 握手と接続確立を含むので地域の判断には使えない。
   // 温めてから複数回測り、中央値を採る。ここは起動時の一度きりで、
   // 定期的に叩くわけではないので compute を起こし続ける心配は無い。
+  // コードより先にスキーマを揃える。手で当て忘れた一回で機能ごと落ちる。
+  await runMigrations({
+    directUrl: config.db.urlDirect,
+    connectionTimeoutMs: config.db.connectionTimeoutMs,
+  });
   await db.execute(sql`select 1`);
   const samples: number[] = [];
   for (let i = 0; i < 3; i += 1) {

@@ -1,0 +1,48 @@
+#!/bin/sh
+# 秘密情報のコミットを実際に止めるフック。
+#
+# 手書きのチェックを毎回書いていたが、正規表現 `\.env\..*` が
+# `.env.example`（コミットすべきテンプレート）まで拾い、しかも echo だけで
+# 中断していなかった。狼を叫ぶだけで止めない番人は無いより悪い。
+#
+# 有効化: git config core.hooksPath .githooks
+
+set -e
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+fail=0
+
+# 1) 実体の .env 系（.env.example と .env.sample は除く）
+for f in $staged; do
+  case "$f" in
+    .env.example|.env.sample) ;;
+    .env|.env.*)
+      echo "拒否: $f は秘密情報を含むためコミットできません" >&2
+      fail=1
+      ;;
+  esac
+done
+
+# 2) 内容ベースの検査。ファイル名を変えて回避されても捕まえる。
+#    追加行のみを対象にする（既存行の再表示で誤検出しないため）。
+added=$(git diff --cached --diff-filter=ACM -U0 | grep '^+' | grep -v '^+++' || true)
+
+check() {
+  if printf '%s' "$added" | grep -qE "$1"; then
+    echo "拒否: 追加行に $2 らしき値が含まれています" >&2
+    fail=1
+  fi
+}
+
+check 'sk-cp-[A-Za-z0-9_-]{16,}'            'MiniMax Token Plan キー'
+check 'sk-ant-[A-Za-z0-9_-]{16,}'           'Anthropic API キー'
+check 'sk-[A-Za-z0-9]{32,}'                 'OpenAI API キー'
+check 'npg_[A-Za-z0-9]{12,}'                'Neon データベースパスワード'
+check '[0-9]{9,10}:AA[A-Za-z0-9_-]{30,}'    'Telegram Bot トークン'
+check 'postgres(ql)?://[^:]+:[^@]{8,}@'     'パスワード付き接続文字列'
+
+if [ "$fail" -ne 0 ]; then
+  echo "" >&2
+  echo "意図的な場合のみ git commit --no-verify で回避できます。" >&2
+  exit 1
+fi

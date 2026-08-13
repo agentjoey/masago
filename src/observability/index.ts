@@ -2,6 +2,8 @@ export type { Logger } from './logger.js';
 export { createLogger } from './logger.js';
 export { redact } from './redact.js';
 export { getCorrelationId, withCorrelationId } from './correlation.js';
+export { startHealthServer } from './health.js';
+export type { HealthServerOptions } from './health.js';
 
 import { createLogger } from './logger.js';
 import type { Logger } from './logger.js';

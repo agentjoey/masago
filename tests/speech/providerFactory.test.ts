@@ -79,6 +79,9 @@ function makeConfig(overrides?: {
       nightlyBackupLocalTime: '03:00',
     },
     budget: { dailyCostSoftLimitUsd: 1, monthlyCostSoftLimitUsd: 10 },
+    server: {
+      port: 3000,
+    },
     logging: { level: 'info' },
   };
 }

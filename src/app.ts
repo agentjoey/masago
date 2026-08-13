@@ -7,7 +7,7 @@ import { closeDb, db, telegramUpdatesRepo } from './db/index.js';
 import { createKnowledgeKeyStore } from './db/repositories/knowledgeItems.js';
 import { createKanaCommands } from './learning/kanaCommands.js';
 import { ensureKanaSeeded } from './learning/kanaSeed.js';
-import { createLogger } from './observability/index.js';
+import { createLogger, startHealthServer } from './observability/index.js';
 import {
   createCommandHandlers,
   createHandleUpdate,
@@ -177,7 +177,21 @@ const bot = createBot({
   kana: { commands: kanaCommands, audioDir: config.kana.audioDir },
 });
 
+const healthServer = startHealthServer({
+  port: config.server.port,
+  version: pkg.version,
+  logger,
+});
+
 onShutdown(() => bot.stop());
+onShutdown(
+  () =>
+    new Promise<void>((resolve) => {
+      healthServer.close(() => {
+        resolve();
+      });
+    }),
+);
 onShutdown(closeDb);
 
 async function main(): Promise<void> {

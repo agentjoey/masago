@@ -43,6 +43,9 @@ const envSchema = z.object({
   LLM_PROMPT_CACHE_ENABLED: envBoolean(true),
 
   // STT
+  // Railway が注入する。健康確認だけを返すサーバが使う。
+  PORT: z.coerce.number().int().positive().default(3000),
+
   // V2 は文字入力が主で、音声入力は範囲外（C4）。既定で無効。
   // 有効にするときは ffmpeg が要る——OGG/opus を STT が読める形に直すため。
   VOICE_INPUT_ENABLED: envBoolean(false),
@@ -176,6 +179,9 @@ export const configSchema = envSchema.transform((env) => ({
   },
   logging: {
     level: env.LOG_LEVEL,
+  },
+  server: {
+    port: env.PORT,
   },
 }));
 

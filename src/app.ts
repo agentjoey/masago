@@ -133,7 +133,7 @@ function keyFormatWarnings(): string[] {
   return warnings;
 }
 
-async function runStartupChecks(): Promise<void> {
+async function runStartupChecks(): Promise<{ dbRoundTripMs: number }> {
   // ffmpeg が要るのは音声入力の正規化だけ（OGG/opus → STT が読める形）。
   // V2 は文字入力が主で音声入力は範囲外なので、無効なら要求しない。
   // ここを無条件の関門にしていると、使わない機能のために起動できなくなる。
@@ -142,7 +142,12 @@ async function runStartupChecks(): Promise<void> {
       'startup check failed: VOICE_INPUT_ENABLED=true requires ffmpeg on PATH',
     );
   }
+  // 往復時間を残す。Railway と Neon が同じ地域に居るかは設定画面を
+  // 見ても分かりにくいが、この数字なら一目で分かる——同一地域なら
+  // 数ミリ秒〜十数ミリ秒、大陸を跨げば数百ミリ秒になる（§10）。
+  const probeStart = performance.now();
   await db.execute(sql`select 1`);
+  const dbRoundTripMs = Math.round(performance.now() - probeStart);
   // 仮名は 104 個で増えない。揃っていれば一件の SELECT で戻るので、
   // 起動ごとに呼んでも compute を無駄に起こさない（§9.1）。
   const seeded = await ensureKanaSeeded(db);
@@ -152,6 +157,7 @@ async function runStartupChecks(): Promise<void> {
   for (const warning of keyFormatWarnings()) {
     logger.warn('provider key format looks unusual', { warning });
   }
+  return { dbRoundTripMs };
 }
 
 const kanaCommands = createKanaCommands({
@@ -195,8 +201,9 @@ onShutdown(
 onShutdown(closeDb);
 
 async function main(): Promise<void> {
-  await runStartupChecks();
+  const { dbRoundTripMs } = await runStartupChecks();
   logger.info('startup checks passed', {
+    dbRoundTripMs,
     sttProvider: stt.name,
     sttModel: stt.model,
     ttsProvider: tts.name,

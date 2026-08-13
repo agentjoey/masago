@@ -1,0 +1,12 @@
+# Railway のビルドコンテキストに秘密情報を持ち込まない。
+# 環境変数は Railway 側に設定済みで、実行時は process.env から読む。
+# .gitignore も尊重されるはずだが、秘密の扱いは二重に止める。
+.env
+.env.*
+!.env.example
+
+node_modules
+dist
+.git
+assets/kana-audio/*.mp3.bak
+coverage

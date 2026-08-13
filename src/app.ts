@@ -223,6 +223,14 @@ const kanaCommands = createKanaCommands({
   newPerDay: config.kana.newPerDay,
   maxReviews: config.kana.maxReviews,
   backlogThreshold: config.kana.backlogThreshold,
+  // 学習者の地域時間の 0 時。一日の新出上限をここで区切る。
+  dayStart: (now: Date) => {
+    const parts = partsInZone(now, config.session.userTimezone);
+    return zonedWallClockToInstant(
+      { ...parts, hour: 0, minute: 0 },
+      config.session.userTimezone,
+    );
+  },
   activity: async (learnerId, now) => {
     const since = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
     const stamps = await learningEventsRepo.answerTimestampsSince(

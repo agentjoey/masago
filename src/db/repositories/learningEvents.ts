@@ -1,5 +1,6 @@
-import { and, eq, gte, inArray } from 'drizzle-orm';
+import { and, count, eq, gte, inArray } from 'drizzle-orm';
 import {
+  knowledgeItems,
   learningEvents,
   type LearningEvent,
   type NewLearningEvent,
@@ -53,4 +54,35 @@ export async function answerTimestampsSince(
       ),
     );
   return rows.map((row) => row.createdAt);
+}
+
+/**
+ * その日すでに導入した数（種別ごと）。
+ *
+ * 一日の新出上限は「一回の呼び出しで出す数」ではなく「その日に出した総数」
+ * でなければならない。前者だと `/kana` を五回叩けば五日分が一日で入り、
+ * 積み残しが雪だるまになる（実測で確認）。
+ */
+export async function countIntroducedSince(
+  tx: Executor,
+  learnerId: string,
+  since: Date,
+  type: (typeof knowledgeItems.$inferSelect)['type'],
+): Promise<number> {
+  const rows = await tx
+    .select({ count: count() })
+    .from(learningEvents)
+    .innerJoin(
+      knowledgeItems,
+      eq(learningEvents.knowledgeItemId, knowledgeItems.id),
+    )
+    .where(
+      and(
+        eq(learningEvents.learnerId, learnerId),
+        eq(learningEvents.eventType, 'INTRODUCED'),
+        eq(knowledgeItems.type, type),
+        gte(learningEvents.createdAt, since),
+      ),
+    );
+  return rows[0]?.count ?? 0;
 }

@@ -20,6 +20,7 @@ import type { Random } from '../curriculum/quiz.js';
 import { vocabOfKey } from '../curriculum/vocabN5.js';
 import type { Executor } from '../db/repositories/executor.js';
 import * as learnerProfiles from '../db/repositories/learnerProfiles.js';
+import * as learningEvents from '../db/repositories/learningEvents.js';
 import * as reviewQueue from '../db/repositories/reviewQueue.js';
 import {
   decodeAnswer,
@@ -113,6 +114,11 @@ export interface KanaCommandDeps {
   readonly newPerDay: number;
   readonly maxReviews: number;
   readonly backlogThreshold: number;
+  /**
+   * 学習者の地域時間での「その日の 0 時」。一日の新出上限を数えるのに要る。
+   * 省略すると上限は一回あたりの数として働く（従来の挙動）。
+   */
+  readonly dayStart?: (now: Date) => Date;
   /** 費用の集計。DB とタイムゾーンは呼び出し側が閉じ込める。 */
   readonly costSummary?: (now: Date) => Promise<CostView>;
   /** 直近一週間の活動。無ければ /progress は進度だけを出す。 */
@@ -141,6 +147,28 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
     maxReviews: deps.maxReviews,
     backlogThreshold: deps.backlogThreshold,
   };
+
+  /**
+   * 今日まだ出してよい新出の数。
+   *
+   * 上限は「一回で出す数」ではなく「その日に出した総数」で効かせる。
+   * そうしないと `/kana` を五回叩けば五日分が一日で入り、翌日以降の
+   * 復習が雪だるまになる（実測で確認）。
+   */
+  async function remainingNewToday(
+    learnerId: string,
+    now: Date,
+    type: 'KANA' | 'VOCABULARY',
+  ): Promise<number> {
+    if (deps.dayStart === undefined) return deps.newPerDay;
+    const already = await learningEvents.countIntroducedSince(
+      executor,
+      learnerId,
+      deps.dayStart(now),
+      type,
+    );
+    return Math.max(0, deps.newPerDay - already);
+  }
 
   async function learnerIdOf(
     telegramUserId: number,
@@ -230,13 +258,14 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
-      const kana = await planKanaLesson(executor, learnerId, now, lessonOptions);
-      const vocab = await planVocabSession(
-        executor,
-        learnerId,
-        now,
-        lessonOptions,
-      );
+      const kana = await planKanaLesson(executor, learnerId, now, {
+        ...lessonOptions,
+        newPerDay: await remainingNewToday(learnerId, now, 'KANA'),
+      });
+      const vocab = await planVocabSession(executor, learnerId, now, {
+        ...lessonOptions,
+        newPerDay: await remainingNewToday(learnerId, now, 'VOCABULARY'),
+      });
       return [
         {
           text: renderDaily({
@@ -258,12 +287,10 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
 
-      const lesson = await planKanaLesson(
-        executor,
-        learnerId,
-        now,
-        lessonOptions,
-      );
+      const lesson = await planKanaLesson(executor, learnerId, now, {
+        ...lessonOptions,
+        newPerDay: await remainingNewToday(learnerId, now, 'KANA'),
+      });
 
       const replies: KanaReply[] = [];
 
@@ -477,12 +504,10 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
-      const lesson = await planVocabSession(
-        executor,
-        learnerId,
-        now,
-        lessonOptions,
-      );
+      const lesson = await planVocabSession(executor, learnerId, now, {
+        ...lessonOptions,
+        newPerDay: await remainingNewToday(learnerId, now, 'VOCABULARY'),
+      });
 
       if (lesson.stage === 'S0_KANA_ONLY') {
         return [

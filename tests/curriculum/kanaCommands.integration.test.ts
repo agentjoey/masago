@@ -501,3 +501,72 @@ describe.skipIf(!HAS_DB)('/start', () => {
     expect(again[0]?.text).not.toContain('我是 MasaGo');
   });
 });
+
+describe.skipIf(!HAS_DB)('daily new-item cap', () => {
+  // newPerDay は「一回で出す数」ではなく「その日に出した総数」。
+  // 実測で /kana を 5 回叩くと 25 個入り、翌日以降の復習が雪だるまになった。
+  it('caps introductions per day, not per call', { timeout: 180000 }, async () => {
+    const { db, schema, kanaCommands } = need();
+    const userId = 9_910_000_000 + (RUN % 100_000);
+    const [learner] = await db
+      .insert(schema.learnerProfiles)
+      .values({ telegramUserId: userId })
+      .returning();
+    if (!learner) throw new Error('failed to create learner');
+
+    let localClock = new Date('2027-10-01T09:00:00Z');
+    const dayStart = (now: Date): Date => {
+      const day = new Date(now);
+      day.setUTCHours(0, 0, 0, 0);
+      return day;
+    };
+    const commands = kanaCommands.createKanaCommands({
+      executor: db,
+      now: () => localClock,
+      random: seeded(3),
+      requestRetention: 0.9,
+      optionCount: 4,
+      newPerDay: 5,
+      maxReviews: 20,
+      backlogThreshold: 20,
+      dailyLimitUsd: 1,
+      monthlyLimitUsd: 10,
+      dayStart,
+    });
+
+    const introduced = async (): Promise<number> => {
+      const rows = await db
+        .select()
+        .from(schema.reviewQueue)
+        .where(eq(schema.reviewQueue.learnerId, learner.id));
+      return rows.length;
+    };
+
+    try {
+      for (let call = 0; call < 4; call += 1) {
+        await commands.drill(userId);
+      }
+      expect(await introduced()).toBe(5);
+
+      // 翌日はまた 5 個ぶんの枠が戻る
+      localClock = new Date('2027-10-02T09:00:00Z');
+      await commands.drill(userId);
+      expect(await introduced()).toBe(10);
+
+      // /today も残り枠を反映する（枠を使い切った日は新出を出さない）
+      await commands.drill(userId);
+      const today = await commands.today(userId);
+      expect(today[0]?.text).not.toContain('新假名 5 个');
+    } finally {
+      await db
+        .delete(schema.learningEvents)
+        .where(eq(schema.learningEvents.learnerId, learner.id));
+      await db
+        .delete(schema.reviewQueue)
+        .where(eq(schema.reviewQueue.learnerId, learner.id));
+      await db
+        .delete(schema.learnerProfiles)
+        .where(eq(schema.learnerProfiles.id, learner.id));
+    }
+  });
+});

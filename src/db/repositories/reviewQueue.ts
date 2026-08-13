@@ -67,12 +67,15 @@ export async function enqueueIfAbsent(
   return inserted.length;
 }
 
+type KnowledgeType = (typeof knowledgeItems.$inferSelect)['type'];
+
 /** 期日が来ている項目。期日の早い順＝忘れかけている順。 */
 export async function listDue(
   tx: Executor,
   learnerId: string,
   now: Date,
   limit: number,
+  type?: KnowledgeType,
 ): Promise<DueItem[]> {
   const rows = await tx
     .select({ entry: reviewQueue, item: knowledgeItems })
@@ -85,6 +88,7 @@ export async function listDue(
       and(
         eq(reviewQueue.learnerId, learnerId),
         lte(reviewQueue.nextReviewAt, now),
+        type === undefined ? undefined : eq(knowledgeItems.type, type),
       ),
     )
     .orderBy(asc(reviewQueue.nextReviewAt))
@@ -101,17 +105,45 @@ export async function countDue(
   tx: Executor,
   learnerId: string,
   now: Date,
+  type?: KnowledgeType,
 ): Promise<number> {
   const rows = await tx
     .select({ count: sql<number>`count(*)::int` })
     .from(reviewQueue)
+    .innerJoin(
+      knowledgeItems,
+      eq(reviewQueue.knowledgeItemId, knowledgeItems.id),
+    )
     .where(
       and(
         eq(reviewQueue.learnerId, learnerId),
         lte(reviewQueue.nextReviewAt, now),
+        type === undefined ? undefined : eq(knowledgeItems.type, type),
       ),
     );
   return rows[0]?.count ?? 0;
+}
+
+/**
+ * キューに入っている知識項目のキー＝「一度は導入した」もの。
+ * 新出を選ぶときに、既に出したものを除くのに使う。
+ */
+export async function listIntroducedKeys(
+  tx: Executor,
+  learnerId: string,
+  type: KnowledgeType,
+): Promise<string[]> {
+  const rows = await tx
+    .select({ key: knowledgeItems.key })
+    .from(reviewQueue)
+    .innerJoin(
+      knowledgeItems,
+      eq(reviewQueue.knowledgeItemId, knowledgeItems.id),
+    )
+    .where(
+      and(eq(reviewQueue.learnerId, learnerId), eq(knowledgeItems.type, type)),
+    );
+  return rows.map((row) => row.key);
 }
 
 export async function findEntry(

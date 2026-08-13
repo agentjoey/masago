@@ -460,10 +460,18 @@ null（值存在不可查询的 `multiRegionConfig` 中），所以改为在启�
 
 > 一发目的往返包含 TLS 握手与建连（实测 76ms），拿它判断地域会得出相反结论。
 
-**目前是 `railway up` 直传，不是 GitHub 自动部署。** Railway 的 GitHub App
-尚未获得 `agentjoey/masago` 的访问权（部署时报 `Repository not found or is not
-accessible`），授权属于账号级操作。授权后即可恢复 `GitHub main → Railway` 的
-自动部署链路。
+**GitHub 自动部署已接通**（2026-08-14 授权后验证）：push 到 `main` 触发
+Railway 构建，实测部署 commit 与 `origin/main` 一致。
+
+**`overlapSeconds` 必须为 0。** Railway 默认让新旧容器重叠一段时间，
+但 Telegram 长轮询同一时刻只允许一个实例调 `getUpdates`，重叠期必然报
+`409 Conflict: terminated by other getUpdates request`，旧实例被踢、
+靠重启策略兜回来。自愈但不干净，且重叠窗口内的更新归属不确定。
+设为 0 表示先停旧再起新——单实例长轮询本来就不存在"零停机滚动"这回事。
+
+区域与重叠设置都写在 `railway.json` 里，而不是只靠 API 改一次：
+`deploy.multiRegionConfig` 与 `deploy.overlapSeconds` 都在官方 schema 中，
+版本化后重建服务也能复现。
 
 **部署时的一处教训**：把 `.env` 按行 `KEY=VALUE` 切开灌进 Railway 是错的——
 Node 的 `--env-file` 会剥掉行内注释，而朴素切分不会。四个变量因此带上了

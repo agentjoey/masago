@@ -54,10 +54,14 @@ export const retryStatus = pgEnum('retry_status', [
   'FAILED',
 ]);
 
+// FSRS の State と 1:1 で対応させる（New/Learning/Review/Relearning）。
+// MASTERED は FSRS の状態ではなく、掌握度から導出する本システム独自の段階。
+// 同じ列に混ぜると復習スケジュールと学習段階が区別できなくなるため併存させる。
 export const reviewState = pgEnum('review_state', [
   'NEW',
   'LEARNING',
   'REVIEW',
+  'RELEARNING',
   'MASTERED',
 ]);
 

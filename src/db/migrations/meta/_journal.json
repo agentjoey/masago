@@ -29,6 +29,13 @@
       "when": 1786647877457,
       "tag": "0003_medical_vulcan",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786648485257,
+      "tag": "0004_jittery_victor_mancha",
+      "breakpoints": true
     }
   ]
 }

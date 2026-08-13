@@ -70,6 +70,11 @@ const envSchema = z.object({
   SURFACE_MAX_ITEMS: z.coerce.number().int().min(1).default(3),
   SURFACE_HIGH_IMPORTANCE_THRESHOLD: z.coerce.number().int().min(1).default(2),
 
+  // Review scheduling (FSRS)
+  // 目標保持率。0.9 なら復習時点で 90% 思い出せる想定で間隔を引く。
+  // 上げるほど復習は増えて忘れにくく、下げるほど楽になるが取りこぼす。
+  FSRS_REQUEST_RETENTION: z.coerce.number().gt(0).lt(1).default(0.9),
+
   // Session & scheduling
   USER_TIMEZONE: z
     .string()
@@ -137,6 +142,9 @@ export const configSchema = envSchema.transform((env) => ({
     surfaceAfterTurnsCoach: env.SURFACE_AFTER_TURNS_COACH,
     surfaceMaxItems: env.SURFACE_MAX_ITEMS,
     highImportanceThreshold: env.SURFACE_HIGH_IMPORTANCE_THRESHOLD,
+  },
+  review: {
+    requestRetention: env.FSRS_REQUEST_RETENTION,
   },
   session: {
     userTimezone: env.USER_TIMEZONE,

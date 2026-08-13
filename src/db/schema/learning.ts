@@ -74,8 +74,19 @@ export const reviewQueue = pgTable(
     knowledgeItemId: uuid('knowledge_item_id')
       .notNull()
       .references(() => knowledgeItems.id),
-    nextReviewAt: timestamp('next_review_at', { withTimezone: true }).notNull(),
-    intervalDays: integer('interval_days').default(1).notNull(),
+    // ここから下は FSRS の Card をそのまま永続化する（V2 §3.1）。
+    // 間隔を計算し直すには前回の状態が全部要る——一つでも欠けると
+    // 復習履歴が失われ、毎回 New から数え直すことになる。
+    nextReviewAt: timestamp('next_review_at', { withTimezone: true }).notNull(), // Card.due
+    intervalDays: integer('interval_days').default(1).notNull(), // Card.scheduled_days
+    stability: doublePrecision('stability').default(0).notNull(),
+    difficulty: doublePrecision('difficulty').default(0).notNull(),
+    elapsedDays: integer('elapsed_days').default(0).notNull(),
+    learningSteps: integer('learning_steps').default(0).notNull(),
+    reps: integer('reps').default(0).notNull(),
+    lapses: integer('lapses').default(0).notNull(),
+    // 未復習なら null。0 や epoch で埋めると「大昔に復習した」と誤解される。
+    lastReview: timestamp('last_review', { withTimezone: true }),
     priority: doublePrecision('priority').default(0).notNull(),
     state: reviewState('state').default('NEW').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })

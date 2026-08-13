@@ -1,0 +1,178 @@
+import { and, asc, eq, lte, sql } from 'drizzle-orm';
+import {
+  knowledgeItems,
+  reviewQueue,
+  type ReviewQueueEntry,
+} from '../schema/learning.js';
+import type { Executor } from './executor.js';
+
+/**
+ * 復習キューの永続化だけを持つ。間隔をどう決めるかは `curriculum/review.ts`、
+ * 両者を繋ぐのは `learning/review.ts`——ここに FSRS を持ち込むと、repository が
+ * repository でなくなり、学習理論がデータ層に癒着する。
+ *
+ * 到来した項目を取りに行くのは学習者が `/today` や `/review` を叩いた時だけ。
+ * 期日を定期ポーリングして探しに行くと、Neon の compute が起き続けて
+ * 無料枠を焼く（§9.1）。予定通知は別途アプリ内タイマーが持つ。
+ */
+
+/** FSRS 由来の列。値の意味は curriculum 側が決め、ここは運ぶだけ。 */
+export type ReviewCardColumns = Pick<
+  typeof reviewQueue.$inferInsert,
+  | 'nextReviewAt'
+  | 'intervalDays'
+  | 'stability'
+  | 'difficulty'
+  | 'elapsedDays'
+  | 'learningSteps'
+  | 'reps'
+  | 'lapses'
+  | 'lastReview'
+  | 'state'
+>;
+
+export interface DueItem {
+  entry: ReviewQueueEntry;
+  knowledgeType: (typeof knowledgeItems.$inferSelect)['type'];
+  knowledgeKey: string;
+}
+
+/**
+ * まだキューに無い知識項目を積む。既にあれば触らない——学習済みの
+ * FSRS 状態を初期化してしまうと、それまでの復習履歴が消える。
+ */
+export async function enqueueIfAbsent(
+  tx: Executor,
+  learnerId: string,
+  knowledgeItemIds: readonly string[],
+  initial: ReviewCardColumns,
+): Promise<number> {
+  const unique = [...new Set(knowledgeItemIds)];
+  if (unique.length === 0) {
+    return 0;
+  }
+  const inserted = await tx
+    .insert(reviewQueue)
+    .values(
+      unique.map((knowledgeItemId) => ({
+        learnerId,
+        knowledgeItemId,
+        ...initial,
+      })),
+    )
+    .onConflictDoNothing({
+      target: [reviewQueue.learnerId, reviewQueue.knowledgeItemId],
+    })
+    .returning({ id: reviewQueue.id });
+  return inserted.length;
+}
+
+/** 期日が来ている項目。期日の早い順＝忘れかけている順。 */
+export async function listDue(
+  tx: Executor,
+  learnerId: string,
+  now: Date,
+  limit: number,
+): Promise<DueItem[]> {
+  const rows = await tx
+    .select({ entry: reviewQueue, item: knowledgeItems })
+    .from(reviewQueue)
+    .innerJoin(
+      knowledgeItems,
+      eq(reviewQueue.knowledgeItemId, knowledgeItems.id),
+    )
+    .where(
+      and(
+        eq(reviewQueue.learnerId, learnerId),
+        lte(reviewQueue.nextReviewAt, now),
+      ),
+    )
+    .orderBy(asc(reviewQueue.nextReviewAt))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    entry: row.entry,
+    knowledgeType: row.item.type,
+    knowledgeKey: row.item.key,
+  }));
+}
+
+export async function countDue(
+  tx: Executor,
+  learnerId: string,
+  now: Date,
+): Promise<number> {
+  const rows = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(reviewQueue)
+    .where(
+      and(
+        eq(reviewQueue.learnerId, learnerId),
+        lte(reviewQueue.nextReviewAt, now),
+      ),
+    );
+  return rows[0]?.count ?? 0;
+}
+
+export async function findEntry(
+  tx: Executor,
+  learnerId: string,
+  knowledgeItemId: string,
+): Promise<ReviewQueueEntry | undefined> {
+  const rows = await tx
+    .select()
+    .from(reviewQueue)
+    .where(
+      and(
+        eq(reviewQueue.learnerId, learnerId),
+        eq(reviewQueue.knowledgeItemId, knowledgeItemId),
+      ),
+    )
+    .limit(1);
+  return rows[0];
+}
+
+/** 計算済みの状態を書き込む。無ければ作る。 */
+export async function saveState(
+  tx: Executor,
+  learnerId: string,
+  knowledgeItemId: string,
+  columns: ReviewCardColumns,
+): Promise<ReviewQueueEntry> {
+  const values = { ...columns, updatedAt: new Date() };
+  const [row] = await tx
+    .insert(reviewQueue)
+    .values({ learnerId, knowledgeItemId, ...values })
+    .onConflictDoUpdate({
+      target: [reviewQueue.learnerId, reviewQueue.knowledgeItemId],
+      set: values,
+    })
+    .returning();
+
+  if (row === undefined) {
+    throw new Error(
+      `review_queue upsert returned no row for item ${knowledgeItemId}`,
+    );
+  }
+  return row;
+}
+
+/**
+ * 掌握済みに上げる。FSRS は「習得」を知らないので、判定は §3.3 の
+ * 集計側が持ち、ここは記録するだけ。
+ */
+export async function markMastered(
+  tx: Executor,
+  learnerId: string,
+  knowledgeItemId: string,
+): Promise<void> {
+  await tx
+    .update(reviewQueue)
+    .set({ state: 'MASTERED', updatedAt: new Date() })
+    .where(
+      and(
+        eq(reviewQueue.learnerId, learnerId),
+        eq(reviewQueue.knowledgeItemId, knowledgeItemId),
+      ),
+    );
+}

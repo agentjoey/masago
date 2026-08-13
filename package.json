@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "ci:sim": "sh scripts/ci-sim.sh",
     "verify:llm": "tsx --env-file=.env scripts/verify-llm.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
@@ -23,6 +24,7 @@
     "grammy": "^1.45.1",
     "pg": "^8.23.0",
     "pino": "^9.7.0",
+    "ts-fsrs": "^5.4.1",
     "zod": "^4.0.0"
   },
   "devDependencies": {

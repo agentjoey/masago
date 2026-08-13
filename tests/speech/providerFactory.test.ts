@@ -55,6 +55,9 @@ function makeConfig(overrides?: {
       minimaxApiKey: 'minimax-key',
       minimaxVoiceId: 'ja-voice-1',
     },
+    review: {
+      requestRetention: 0.9,
+    },
     correction: {
       surfaceAfterTurnsConversation: 4,
       surfaceAfterTurnsCoach: 1,

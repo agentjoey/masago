@@ -30,7 +30,8 @@ src/
   sessions/       session 生命周期、orchestrator、状态机
   agent/          tutor policy、context builder、output schemas
   corrections/    pending issues、呈现策略、retry 跟踪
-  learning/       daily planner、curriculum、review、mastery
+  curriculum/     假名/词表数据、FSRS 复习调度、掌握度——纯函数，不碰 db/config
+  learning/       daily planner、roadmap、内容池选取
   memory/         profile、knowledge、learning events
   speech/         audio lifecycle、normalizer、STT/TTS 契约与实现
   db/             schema、migrations、repositories
@@ -46,7 +47,10 @@ src/
 ```
 telegram → sessions → { agent, corrections, learning, memory, speech, usage }
                                     ↓
-                                   db
+                          { curriculum, db }
+
+curriculum 是叶子：不依赖任何模块。db 也不得依赖 curriculum——
+两者由 learning/ 组合（例：learning/review.ts 读 db 的状态、交 curriculum 算、再写回）。
 config、observability 可被任何模块依赖，且它们不依赖任何业务模块。
 ```
 
@@ -56,6 +60,11 @@ config、observability 可被任何模块依赖，且它们不依赖任何业务
 2. 任何模块不得在 `db/` 之外拼接 SQL 或直接使用 `pg` 客户端。
 3. 业务模块不得直接读 `process.env`，一律经 `config/`。
 4. 业务模块不得直接 `console.log`，一律经 `observability/` 的 logger。
+   例外：`scripts/` 是手工执行的 CLI，stdout 就是它的界面。
+5. `curriculum/` 必须保持纯函数：不导入 `db/`、`config/`，不读时钟。
+   `now`、`requestRetention` 这类都从参数传入。
+   —— 复习间隔的正确性要能在没有数据库、没有 .env 的情况下钉死；
+   一旦这里依赖了环境，边界情况就只能靠线上撞出来。
 
 ---
 

@@ -34,3 +34,6 @@ export {
   type RetryEvaluationOutput,
   type TutorOutput,
 } from './schemas.js';
+
+export { explain } from './explain.js';
+export type { ExplainTarget, ExplainOptions, Explanation } from './explain.js';

@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, lte, sql } from 'drizzle-orm';
 import {
   knowledgeItems,
   reviewQueue,
@@ -189,6 +189,37 @@ export async function listIntroducedKeys(
       and(eq(reviewQueue.learnerId, learnerId), eq(knowledgeItems.type, type)),
     );
   return rows.map((row) => row.key);
+}
+
+/**
+ * 直近に答えた項目。`/explain` が「今のあれ」を指すのに使う。
+ *
+ * どこにも覚えておかずに済むのが利点——最後に答えた時刻は
+ * 復習キューに既に載っている。
+ */
+export async function findMostRecentlyReviewed(
+  tx: Executor,
+  learnerId: string,
+): Promise<{ entry: ReviewQueueEntry; knowledgeKey: string } | undefined> {
+  const rows = await tx
+    .select({ entry: reviewQueue, item: knowledgeItems })
+    .from(reviewQueue)
+    .innerJoin(
+      knowledgeItems,
+      eq(reviewQueue.knowledgeItemId, knowledgeItems.id),
+    )
+    .where(
+      and(
+        eq(reviewQueue.learnerId, learnerId),
+        isNotNull(reviewQueue.lastReview),
+      ),
+    )
+    .orderBy(desc(reviewQueue.lastReview))
+    .limit(1);
+  const row = rows[0];
+  return row === undefined
+    ? undefined
+    : { entry: row.entry, knowledgeKey: row.item.key };
 }
 
 export async function findEntry(

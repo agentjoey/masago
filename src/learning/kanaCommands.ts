@@ -1,4 +1,4 @@
-import { KANA_BY_ID } from '../curriculum/kana.js';
+import { KANA_BY_ID, kanaOfKey } from '../curriculum/kana.js';
 import {
   renderCorrect,
   renderCost,
@@ -15,6 +15,7 @@ import {
   type CostView,
 } from '../curriculum/render.js';
 import type { Random } from '../curriculum/quiz.js';
+import { vocabOfKey } from '../curriculum/vocabN5.js';
 import type { Executor } from '../db/repositories/executor.js';
 import * as learnerProfiles from '../db/repositories/learnerProfiles.js';
 import * as reviewQueue from '../db/repositories/reviewQueue.js';
@@ -95,6 +96,8 @@ export interface KanaCommands {
   vocab(telegramUserId: number): Promise<KanaReply[]>;
   /** 用量と費用。 */
   cost(telegramUserId: number): Promise<KanaReply[]>;
+  /** 直近に答えた項目の解説。 */
+  explain(telegramUserId: number): Promise<KanaReply[]>;
 }
 
 export interface KanaCommandDeps {
@@ -110,6 +113,12 @@ export interface KanaCommandDeps {
   readonly costSummary?: (now: Date) => Promise<CostView>;
   readonly dailyLimitUsd: number;
   readonly monthlyLimitUsd: number;
+  /** 解説の生成。無ければ /explain は「未启用」と答える。 */
+  readonly explainItem?: (target: {
+    subject: string;
+    reading?: string;
+    meaning?: string;
+  }) => Promise<string>;
 }
 
 const NOT_REGISTERED =
@@ -386,6 +395,50 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         return [{ text: '成本统计尚未启用。' }];
       }
       return [{ text: renderCost(await deps.costSummary(deps.now())) }];
+    },
+
+    async explain(telegramUserId) {
+      const learnerId = await learnerIdOf(telegramUserId);
+      if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
+      if (deps.explainItem === undefined) {
+        return [{ text: '讲解功能尚未启用。' }];
+      }
+
+      const recent = await reviewQueue.findMostRecentlyReviewed(
+        executor,
+        learnerId,
+      );
+      if (recent === undefined) {
+        return [
+          { text: '还没有练过的内容。先发 /kana 或 /vocab 做几题，再来问。' },
+        ];
+      }
+
+      const kana = kanaOfKey(recent.knowledgeKey);
+      const word = vocabOfKey(recent.knowledgeKey);
+      if (kana === undefined && word === undefined) {
+        return [{ text: '刚才那一项我讲不了。' }];
+      }
+
+      // 語義は出典の値をそのまま渡す。模型に意味を作らせない（§8）。
+      const target =
+        kana !== undefined
+          ? { subject: kana.hiragana, reading: kana.romaji }
+          : {
+              subject: word?.expression ?? '',
+              reading: word?.reading ?? '',
+              meaning: word?.meaning ?? '',
+            };
+
+      try {
+        const text = await deps.explainItem(target);
+        if (text.trim() === '') {
+          return [{ text: '这次没能生成讲解，再试一次。' }];
+        }
+        return [{ text: `📖 ${target.subject}\n\n${text}` }];
+      } catch {
+        return [{ text: '讲解暂时不可用，稍后再试。' }];
+      }
     },
 
     async vocab(telegramUserId) {

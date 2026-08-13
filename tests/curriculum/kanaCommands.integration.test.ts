@@ -54,6 +54,7 @@ function makeCommands(): ReturnType<
     maxReviews: 20,
     backlogThreshold: 20,
     dailyLimitUsd: 1,
+    explainItem: (t) => Promise.resolve(`讲解：${t.subject}`),
     monthlyLimitUsd: 10,
   });
 }
@@ -393,4 +394,71 @@ describe.skipIf(!HAS_DB)('typed answers (§4.3 第二档)', () => {
       expect(replies?.[0]?.audioKanaId).toBe('si');
     },
   );
+});
+
+describe.skipIf(!HAS_DB)('/explain', () => {
+  it(
+    'explains the item the learner just answered',
+    { timeout: 120000 },
+    async () => {
+      const commands = makeCommands();
+      clock = new Date('2027-02-01T09:00:00Z');
+      await commands.drill(TELEGRAM_USER_ID);
+
+      const replies = await commands.explain(TELEGRAM_USER_ID);
+      expect(replies[0]?.text).toContain('讲解：');
+      // 直近に答えた項目を指している
+      expect(replies[0]?.text).toMatch(/[ぁ-ん]|[一-龯]/);
+    },
+  );
+
+  it('asks the learner to practise first when there is nothing to explain', { timeout: 120000 }, async () => {
+    const { db, schema, kanaCommands } = need();
+    const [fresh] = await db
+      .insert(schema.learnerProfiles)
+      .values({ telegramUserId: 9_930_000_000 + (RUN % 100_000) })
+      .returning();
+    if (!fresh) throw new Error('failed to create learner');
+    try {
+      const commands = kanaCommands.createKanaCommands({
+        executor: db,
+        now: () => clock,
+        random: seeded(1),
+        requestRetention: 0.9,
+        optionCount: 4,
+        newPerDay: 5,
+        maxReviews: 20,
+        backlogThreshold: 20,
+        dailyLimitUsd: 1,
+        monthlyLimitUsd: 10,
+        explainItem: () => Promise.resolve('讲解'),
+      });
+      const replies = await commands.explain(9_930_000_000 + (RUN % 100_000));
+      expect(replies[0]?.text).toContain('先发');
+    } finally {
+      await db
+        .delete(schema.learnerProfiles)
+        .where(eq(schema.learnerProfiles.id, fresh.id));
+    }
+  });
+
+  // 解説が落ちても学習は続く。例外をそのまま上げない。
+  it('degrades gracefully when the explainer fails', { timeout: 120000 }, async () => {
+    const { db, kanaCommands } = need();
+    const commands = kanaCommands.createKanaCommands({
+      executor: db,
+      now: () => clock,
+      random: seeded(1),
+      requestRetention: 0.9,
+      optionCount: 4,
+      newPerDay: 5,
+      maxReviews: 20,
+      backlogThreshold: 20,
+      dailyLimitUsd: 1,
+      monthlyLimitUsd: 10,
+      explainItem: () => Promise.reject(new Error('llm down')),
+    });
+    const replies = await commands.explain(TELEGRAM_USER_ID);
+    expect(replies[0]?.text).toContain('暂时不可用');
+  });
 });

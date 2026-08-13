@@ -8,7 +8,7 @@ export type { KanaHandlerDeps };
 
 export const COMMAND_NOT_ENABLED_REPLY = '该命令尚未启用。';
 export const UNKNOWN_COMMAND_REPLY =
-  '未知命令。可用命令：/today /kana /vocab /review /progress /talk /coach /challenge /end';
+  '未知命令。可用命令：/today /kana /vocab /review /progress /explain /cost /talk /coach /challenge /end';
 
 // /review /progress は kana.ts が実装済みなので予約から外す。
 // 両方に登録すると、先に当たったほうが黙って勝つ。

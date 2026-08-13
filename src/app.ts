@@ -1,6 +1,10 @@
 import { sql } from 'drizzle-orm';
 import { InputFile } from 'grammy';
-import { createAnthropicClient, createMinimalTutor } from './agent/index.js';
+import {
+  createAnthropicClient,
+  createMinimalTutor,
+  explain,
+} from './agent/index.js';
 import { config } from './config/index.js';
 import { createCorrectionTurnHooks } from './corrections/index.js';
 import { closeDb, db, telegramUpdatesRepo, usageRecordsRepo } from './db/index.js';
@@ -57,11 +61,14 @@ process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
 const { stt, tts } = createSpeechProviders(config);
 
+// チューターと解説で同じ接続を使い回す。二つ作る理由が無い。
+const llmClient = createAnthropicClient({
+  apiKey: config.llm.apiKey,
+  baseUrl: config.llm.baseUrl,
+});
+
 const tutor: Tutor = createMinimalTutor({
-  client: createAnthropicClient({
-    apiKey: config.llm.apiKey,
-    baseUrl: config.llm.baseUrl,
-  }),
+  client: llmClient,
   model: config.llm.model,
   provider: config.llm.provider,
   promptCacheEnabled: config.llm.promptCacheEnabled,
@@ -197,6 +204,13 @@ const kanaCommands = createKanaCommands({
   backlogThreshold: config.kana.backlogThreshold,
   dailyLimitUsd: config.budget.dailyCostSoftLimitUsd,
   monthlyLimitUsd: config.budget.monthlyCostSoftLimitUsd,
+  explainItem: async (target) => {
+    const result = await explain(target, {
+      client: llmClient,
+      model: config.llm.model,
+    });
+    return result.text;
+  },
   costSummary: async (now) => {
     // 当月ぶんだけ読む。全期間を舐めると行が増えるほど遅くなる。
     const monthStart = new Date(

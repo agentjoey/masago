@@ -135,6 +135,7 @@ export function registerKanaCommands(
   bot.command('progress', run((userId) => commands.progress(userId)));
   bot.command('vocab', run((userId) => commands.vocab(userId)));
   bot.command('cost', run((userId) => commands.cost(userId)));
+  bot.command('explain', run((userId) => commands.explain(userId)));
 
   /**
    * 出題への返信を、通常の会話より先に受け取る。

@@ -1,5 +1,5 @@
 import { eq, inArray } from 'drizzle-orm';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type {
   CorrectionTurnHooks,
   NewPendingIssue,
@@ -7,17 +7,52 @@ import type {
   SurfacingDirective,
 } from '../../src/corrections/index.js';
 
-process.loadEnvFile();
+try {
+  process.loadEnvFile();
+} catch {
+  // CI 没有 .env：本文件全部用例跳过
+}
 
-const { db, closeDb } = await import('../../src/db/index.js');
-const schema = await import('../../src/db/schema/index.js');
-const turnsRepo = await import('../../src/db/repositories/turns.js');
-const detectedIssuesRepo = await import(
-  '../../src/db/repositories/detectedIssues.js'
-);
-const { createCorrectionTurnHooks } = await import(
-  '../../src/corrections/index.js'
-);
+const HAS_DB = Boolean(process.env['DATABASE_URL']);
+
+type Modules = {
+  db: (typeof import('../../src/db/index.js'))['db'];
+  closeDb: (typeof import('../../src/db/index.js'))['closeDb'];
+  schema: typeof import('../../src/db/schema/index.js');
+  turnsRepo: typeof import('../../src/db/repositories/turns.js');
+  detectedIssuesRepo: typeof import('../../src/db/repositories/detectedIssues.js');
+  createCorrectionTurnHooks: (typeof import('../../src/corrections/index.js'))['createCorrectionTurnHooks'];
+};
+
+let modules: Modules | undefined;
+
+function need(): Modules {
+  if (modules === undefined) {
+    throw new Error('database modules were not loaded');
+  }
+  return modules;
+}
+
+beforeAll(async () => {
+  if (!HAS_DB) return;
+  const dbModule = await import('../../src/db/index.js');
+  const schema = await import('../../src/db/schema/index.js');
+  const turnsRepo = await import('../../src/db/repositories/turns.js');
+  const detectedIssuesRepo = await import(
+    '../../src/db/repositories/detectedIssues.js'
+  );
+  const { createCorrectionTurnHooks } = await import(
+    '../../src/corrections/index.js'
+  );
+  modules = {
+    db: dbModule.db,
+    closeDb: dbModule.closeDb,
+    schema,
+    turnsRepo,
+    detectedIssuesRepo,
+    createCorrectionTurnHooks,
+  };
+});
 
 const RUN = Date.now();
 let telegramUserId = 9_300_000_000 + (RUN % 100_000);
@@ -49,6 +84,7 @@ function issueFor(
 }
 
 async function createSession(mode: 'CONVERSATION' | 'COACH') {
+  const { db, schema } = need();
   telegramUserId += 1;
   const [learner] = await db
     .insert(schema.learnerProfiles)
@@ -72,6 +108,7 @@ async function simulateTurn(
   issues: NewPendingIssue[],
   extras: { explicitRequest?: boolean; sessionEnding?: boolean } = {},
 ): Promise<SurfacingDirective> {
+  const { turnsRepo, db } = need();
   messageId += 1;
   const turn = await turnsRepo.create(db, {
     sessionId,
@@ -94,6 +131,7 @@ async function simulateTurn(
 }
 
 async function allIssues(sessionId: string) {
+  const { db, schema } = need();
   return db
     .select()
     .from(schema.detectedIssues)
@@ -101,6 +139,8 @@ async function allIssues(sessionId: string) {
 }
 
 afterAll(async () => {
+  if (modules === undefined) return;
+  const { db, schema, closeDb } = need();
   if (createdLearnerIds.length > 0) {
     await db
       .delete(schema.learningEvents)
@@ -121,8 +161,9 @@ afterAll(async () => {
   await closeDb();
 });
 
-describe('correction turn hooks wiring', () => {
+describe.skipIf(!HAS_DB)('correction turn hooks wiring', () => {
   it('HOLDs turns 1-3 and SURFACEs turn 4 with default config; all detected issues are persisted', { timeout: 60000 }, async () => {
+    const { db, detectedIssuesRepo, createCorrectionTurnHooks } = need();
     const { sessionId, learnerId } = await createSession('CONVERSATION');
     const hooks = createCorrectionTurnHooks({
       executor: db,
@@ -163,6 +204,7 @@ describe('correction turn hooks wiring', () => {
   });
 
   it('changes the rhythm with config only (SURFACE_AFTER_TURNS_CONVERSATION=2), no prompt change', { timeout: 60000 }, async () => {
+    const { db, createCorrectionTurnHooks } = need();
     const { sessionId } = await createSession('CONVERSATION');
     const hooks = createCorrectionTurnHooks({
       executor: db,
@@ -181,6 +223,7 @@ describe('correction turn hooks wiring', () => {
   });
 
   it('Coach mode surfaces from the second turn with the same hooks and default config', { timeout: 60000 }, async () => {
+    const { db, createCorrectionTurnHooks } = need();
     const { sessionId } = await createSession('COACH');
     const hooks = createCorrectionTurnHooks({
       executor: db,
@@ -196,6 +239,7 @@ describe('correction turn hooks wiring', () => {
   });
 
   it('reprocessing the same turn does not duplicate issues (idempotent finalize)', { timeout: 60000 }, async () => {
+    const { db, turnsRepo, createCorrectionTurnHooks } = need();
     const { sessionId } = await createSession('CONVERSATION');
     const hooks = createCorrectionTurnHooks({
       executor: db,
@@ -227,6 +271,7 @@ describe('correction turn hooks wiring', () => {
   });
 
   it('SURFACEs immediately on explicit request and on session end (without retry)', { timeout: 60000 }, async () => {
+    const { db, createCorrectionTurnHooks } = need();
     const { sessionId } = await createSession('CONVERSATION');
     const hooks = createCorrectionTurnHooks({
       executor: db,
@@ -259,8 +304,9 @@ describe('correction turn hooks wiring', () => {
   });
 });
 
-describe('retry evaluation closes the loop', () => {
+describe.skipIf(!HAS_DB)('retry evaluation closes the loop', () => {
   async function eventsFor(learnerId: string) {
+    const { db, schema } = need();
     return db
       .select()
       .from(schema.learningEvents)
@@ -268,7 +314,7 @@ describe('retry evaluation closes the loop', () => {
   }
 
   async function surfaceWithRetryRequested(
-    hooks: ReturnType<typeof createCorrectionTurnHooks>,
+    hooks: ReturnType<Modules['createCorrectionTurnHooks']>,
     sessionId: string,
   ) {
     await simulateTurn(hooks, sessionId, 1, [issueFor(1)]);
@@ -286,6 +332,7 @@ describe('retry evaluation closes the loop', () => {
   }
 
   it('writes SUCCEEDED and a deduped RETRY_SUCCEEDED event in the same transaction as the surfacing writes', { timeout: 60000 }, async () => {
+    const { db, turnsRepo, createCorrectionTurnHooks } = need();
     const { sessionId, learnerId } = await createSession('COACH');
     const hooks = createCorrectionTurnHooks({
       executor: db,
@@ -349,6 +396,7 @@ describe('retry evaluation closes the loop', () => {
   });
 
   it('marks FAILED and never emits a success event when the retry fails', { timeout: 60000 }, async () => {
+    const { db, turnsRepo, createCorrectionTurnHooks } = need();
     const { sessionId, learnerId } = await createSession('COACH');
     const hooks = createCorrectionTurnHooks({
       executor: db,
@@ -386,6 +434,7 @@ describe('retry evaluation closes the loop', () => {
   });
 
   it('leaves the retry pending and emits no event when the model returns no evaluation', { timeout: 60000 }, async () => {
+    const { db, turnsRepo, createCorrectionTurnHooks } = need();
     const { sessionId, learnerId } = await createSession('COACH');
     const hooks = createCorrectionTurnHooks({
       executor: db,

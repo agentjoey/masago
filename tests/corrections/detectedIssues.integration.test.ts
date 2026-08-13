@@ -1,12 +1,30 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-process.loadEnvFile();
+try {
+  process.loadEnvFile();
+} catch {
+  // CI 没有 .env：本文件全部用例跳过
+}
 
-const { db, closeDb } = await import('../../src/db/index.js');
-const schema = await import('../../src/db/schema/index.js');
-const turnsRepo = await import('../../src/db/repositories/turns.js');
-const repo = await import('../../src/db/repositories/detectedIssues.js');
+const HAS_DB = Boolean(process.env['DATABASE_URL']);
+
+type Modules = {
+  db: (typeof import('../../src/db/index.js'))['db'];
+  closeDb: (typeof import('../../src/db/index.js'))['closeDb'];
+  schema: typeof import('../../src/db/schema/index.js');
+  turnsRepo: typeof import('../../src/db/repositories/turns.js');
+  repo: typeof import('../../src/db/repositories/detectedIssues.js');
+};
+
+let modules: Modules | undefined;
+
+function need(): Modules {
+  if (modules === undefined) {
+    throw new Error('database modules were not loaded');
+  }
+  return modules;
+}
 
 const RUN = Date.now();
 const TELEGRAM_USER_ID = 9_100_000_000 + (RUN % 100_000);
@@ -26,6 +44,7 @@ function nextMessageId(): number {
 }
 
 async function createTurn(sessionId: string) {
+  const { turnsRepo, db } = need();
   return turnsRepo.create(db, {
     sessionId,
     telegramMessageId: nextMessageId(),
@@ -48,6 +67,20 @@ function makeIssue(turnId: string, sessionId: string, seq: number) {
 }
 
 beforeAll(async () => {
+  if (!HAS_DB) return;
+  const dbModule = await import('../../src/db/index.js');
+  const schema = await import('../../src/db/schema/index.js');
+  const turnsRepo = await import('../../src/db/repositories/turns.js');
+  const repo = await import('../../src/db/repositories/detectedIssues.js');
+  modules = {
+    db: dbModule.db,
+    closeDb: dbModule.closeDb,
+    schema,
+    turnsRepo,
+    repo,
+  };
+
+  const { db } = need();
   const [learner] = await db
     .insert(schema.learnerProfiles)
     .values({ telegramUserId: TELEGRAM_USER_ID })
@@ -76,6 +109,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (modules === undefined) return;
+  const { db, schema, closeDb } = need();
   for (const sessionId of [created.sessionId, created.otherSessionId]) {
     if (!sessionId) continue;
     await db
@@ -95,8 +130,9 @@ afterAll(async () => {
   await closeDb();
 });
 
-describe('detectedIssues repository', () => {
+describe.skipIf(!HAS_DB)('detectedIssues repository', () => {
   it('insertMany is idempotent per (turn_id, knowledge_key, original)', { timeout: 60000 }, async () => {
+    const { db, schema, repo } = need();
     const turn = await createTurn(created.sessionId);
     const issues = [
       makeIssue(turn.id, created.sessionId, 1),
@@ -118,6 +154,7 @@ describe('detectedIssues repository', () => {
   });
 
   it('listPending returns only unsurfaced issues for the learner, HIGH first then oldest first', { timeout: 60000 }, async () => {
+    const { db, repo } = need();
     const turn = await createTurn(created.sessionId);
     const base = Date.UTC(2026, 7, 2);
     await repo.insertMany(db, [
@@ -142,6 +179,7 @@ describe('detectedIssues repository', () => {
   });
 
   it('countPendingByImportance groups unsurfaced issues by importance', { timeout: 60000 }, async () => {
+    const { db, repo } = need();
     const counts = await repo.countPendingByImportance(db, created.learnerId);
     expect(counts).toEqual({ HIGH: 2, MEDIUM: 3, LOW: 1 });
 
@@ -153,6 +191,7 @@ describe('detectedIssues repository', () => {
   });
 
   it('markSurfaced removes issues from pending and can flag retry tracking', { timeout: 60000 }, async () => {
+    const { db, schema, repo } = need();
     const pending = await repo.listPending(db, created.learnerId);
     const high = pending.filter((row) => row.importance === 'HIGH');
     expect(high).toHaveLength(2);

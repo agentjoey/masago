@@ -113,19 +113,52 @@ export interface ProgressView {
   readonly mastered: number;
 }
 
-export function renderProgress(view: ProgressView): string {
-  const pct =
-    view.total === 0 ? 0 : Math.round((view.introduced / view.total) * 100);
+function bar(introduced: number, total: number): string {
+  const pct = total === 0 ? 0 : Math.round((introduced / total) * 100);
   const filled = Math.round(pct / 5);
-  const bar = '█'.repeat(filled) + '░'.repeat(20 - filled);
+  return `${'█'.repeat(filled)}${'░'.repeat(20 - filled)} ${String(pct)}%`;
+}
+
+export function renderProgress(view: ProgressView): string {
   return [
     '📊 五十音进度',
     '',
-    `${bar} ${String(pct)}%`,
+    bar(view.introduced, view.total),
     `已学 ${String(view.introduced)}/${String(view.total)}`,
     `已掌握 ${String(view.mastered)}`,
     `待复习 ${String(view.dueNow)}`,
   ].join('\n');
+}
+
+export interface FullProgressView {
+  readonly kana: ProgressView;
+  readonly vocab: ProgressView;
+  readonly showVocab: boolean;
+}
+
+/**
+ * 仮名と語彙をまとめた進度。
+ *
+ * 語彙をまだ始めていない段階では語彙の行を出さない。0/671 と並べても
+ * 「まだ手をつけていない量」を突きつけるだけで、今日やることは変わらない。
+ */
+export function renderFullProgress(view: FullProgressView): string {
+  const lines = [
+    '📊 学习进度',
+    '',
+    '五十音',
+    bar(view.kana.introduced, view.kana.total),
+    `  已学 ${String(view.kana.introduced)}/${String(view.kana.total)}　待复习 ${String(view.kana.dueNow)}`,
+  ];
+  if (view.showVocab) {
+    lines.push(
+      '',
+      'N5 单词',
+      bar(view.vocab.introduced, view.vocab.total),
+      `  已学 ${String(view.vocab.introduced)}/${String(view.vocab.total)}　待复习 ${String(view.vocab.dueNow)}`,
+    );
+  }
+  return lines.join('\n');
 }
 
 // ---------- S1 語彙 ----------
@@ -223,8 +256,16 @@ export function renderDaily(summary: DailySummary): string {
   }
   if (summary.newWords.length > 0) {
     lines.push(`新单词 ${String(summary.newWords.length)} 个`);
+    // 仮名だけの語は表記と読みが同じ。「ノート(ノート)」と出すと
+    // 壊れているように見える。
     lines.push(
-      `  ${summary.newWords.map((w) => `${w.expression}(${w.reading})`).join('  ')}`,
+      `  ${summary.newWords
+        .map((w) =>
+          w.reading === w.expression
+            ? w.expression
+            : `${w.expression}(${w.reading})`,
+        )
+        .join('  ')}`,
     );
   }
   if (summary.vocabDue > 0) {

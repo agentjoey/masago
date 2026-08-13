@@ -8,8 +8,11 @@ import {
   tierFor,
 } from '../../src/learning/kanaDrill.js';
 import { isCorrectAnswer } from '../../src/curriculum/quiz.js';
+import { VOCAB_N5_BY_ID } from '../../src/curriculum/vocabN5.js';
 import {
   renderCost,
+  renderDaily,
+  renderFullProgress,
   renderProgress,
   renderQuestion,
   renderToday,
@@ -339,5 +342,95 @@ describe('renderCost', () => {
     expect(text).toContain('—');
     expect(text).not.toContain('Infinity');
     expect(text).not.toContain('NaN');
+  });
+});
+
+describe('renderFullProgress', () => {
+  const kana = { introduced: 46, total: 104, dueNow: 3, mastered: 10 };
+  const vocab = { introduced: 15, total: 671, dueNow: 4, mastered: 0 };
+
+  // 語彙を始める前に 0/671 を並べても、今日やることは変わらない。
+  it('hides vocabulary until it has begun', () => {
+    const text = renderFullProgress({
+      kana,
+      vocab: { ...vocab, introduced: 0 },
+      showVocab: false,
+    });
+    expect(text).toContain('五十音');
+    expect(text).not.toContain('N5 单词');
+  });
+
+  it('shows both once vocabulary has begun', () => {
+    const text = renderFullProgress({ kana, vocab, showVocab: true });
+    expect(text).toContain('五十音');
+    expect(text).toContain('N5 单词');
+    expect(text).toContain('46/104');
+    expect(text).toContain('15/671');
+  });
+
+  it('keeps every bar the same width', () => {
+    const text = renderFullProgress({ kana, vocab, showVocab: true });
+    const bars = text
+      .split('\n')
+      .filter((line) => line.includes('█') || line.includes('░'));
+    expect(bars).toHaveLength(2);
+    for (const line of bars) {
+      const cells = [...line].filter((c) => c === '█' || c === '░').length;
+      expect(cells).toBe(20);
+    }
+  });
+
+  it('does not divide by zero', () => {
+    expect(() =>
+      renderFullProgress({
+        kana: { introduced: 0, total: 0, dueNow: 0, mastered: 0 },
+        vocab: { introduced: 0, total: 0, dueNow: 0, mastered: 0 },
+        showVocab: true,
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe('renderDaily', () => {
+  const wordsOf = (ids: string[]) =>
+    ids.map((id) => {
+      const found = VOCAB_N5_BY_ID.get(id);
+      if (found === undefined) throw new Error(`unknown ${id}`);
+      return found;
+    });
+
+  const base = {
+    stage: 'S1_VOCAB',
+    newKana: [] as never[],
+    kanaDue: 0,
+    newWords: [] as never[],
+    vocabDue: 0,
+    kanaProgress: { introduced: 46, total: 104 },
+    vocabProgress: { introduced: 10, total: 671 },
+    heldBack: false,
+  };
+
+  // 仮名だけの語は表記と読みが同じ。「ノート(ノート)」は壊れて見える。
+  it('does not repeat the reading for kana-only words', () => {
+    const text = renderDaily({
+      ...base,
+      newWords: wordsOf(['ノート#ノート', '大学#だいがく']),
+    });
+    expect(text).not.toContain('ノート(ノート)');
+    expect(text).toContain('大学(だいがく)');
+  });
+
+  it('says so when there is genuinely nothing to do', () => {
+    expect(renderDaily(base)).toContain('今天没有到期的内容');
+  });
+
+  it('explains a hold-back instead of looking empty', () => {
+    expect(renderDaily({ ...base, heldBack: true })).toContain('积压');
+  });
+
+  it('lists both progress lines', () => {
+    const text = renderDaily(base);
+    expect(text).toContain('46/104');
+    expect(text).toContain('10/671');
   });
 });

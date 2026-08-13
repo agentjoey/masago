@@ -4,7 +4,7 @@ import {
   renderCost,
   renderDaily,
   renderDrillFinished,
-  renderProgress,
+  renderFullProgress,
   renderQuestion,
   renderTeachingCard,
   renderVocabCard,
@@ -284,24 +284,40 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
-      const lesson = await planKanaLesson(
+      const kana = await planKanaLesson(executor, learnerId, now, lessonOptions);
+      const vocab = await planVocabSession(
         executor,
         learnerId,
         now,
         lessonOptions,
       );
-      const mastered = await reviewQueue.countMastered(
+      const masteredKana = await reviewQueue.countMastered(
         executor,
         learnerId,
         'KANA',
       );
+      const masteredVocab = await reviewQueue.countMastered(
+        executor,
+        learnerId,
+        'VOCABULARY',
+      );
       return [
         {
-          text: renderProgress({
-            introduced: lesson.progress.introduced,
-            total: lesson.progress.total,
-            dueNow: lesson.dueTotal,
-            mastered,
+          text: renderFullProgress({
+            kana: {
+              introduced: kana.progress.introduced,
+              total: kana.progress.total,
+              dueNow: kana.dueTotal,
+              mastered: masteredKana,
+            },
+            vocab: {
+              introduced: vocab.progress.introduced,
+              total: vocab.progress.total,
+              dueNow: vocab.dueTotal,
+              mastered: masteredVocab,
+            },
+            // 語彙を始めていない段階で 0/671 を突きつけない。
+            showVocab: vocab.stage !== 'S0_KANA_ONLY',
           }),
         },
       ];

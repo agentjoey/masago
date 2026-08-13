@@ -3,6 +3,7 @@ import {
   KANA_BY_ID,
   kanaOfKey,
   type Kana,
+  type KanaScript,
 } from '../curriculum/kana.js';
 import { taughtPool } from '../curriculum/lessonPlan.js';
 import {
@@ -51,12 +52,35 @@ export interface DrillQuestion {
  * 三段目に上げる回数を早くしすぎると、まだ覚えていない字を打たせて
  * 手が止まる。逆に遅すぎると、いつまでも四択の運が混ざる。
  */
-export type DrillTier = 'RECOGNIZE' | 'RECALL' | 'PRODUCE';
+export type DrillTier =
+  | 'RECOGNIZE'
+  | 'RECALL'
+  /** 片仮名を選択肢付きで導入する段。 */
+  | 'KATAKANA'
+  | 'PRODUCE';
 
 export function tierFor(reps: number): DrillTier {
   if (reps <= 1) return 'RECOGNIZE';
   if (reps <= 3) return 'RECALL';
+  if (reps <= 5) return 'KATAKANA';
   return 'PRODUCE';
+}
+
+/**
+ * どちらの字体で出すか。
+ *
+ * 五十音は平仮名と片仮名の両方だが、最初から二つ同時に覚えさせるのは重い。
+ * 平仮名が固まってから片仮名を重ねる——しかも**選択肢付きで**導入する。
+ * シ/ツ、ソ/ン のような取り違えは片仮名にしか無く、誤答に並べて初めて
+ * 区別を迫れる（CONFUSABLES に片仮名の組を用意してあるのはこのため）。
+ *
+ * 打たせる段では交互に出す。片方だけ読めても半分しか読めない。
+ */
+export function scriptFor(reps: number): KanaScript {
+  const tier = tierFor(reps);
+  if (tier === 'RECOGNIZE' || tier === 'RECALL') return 'hiragana';
+  if (tier === 'KATAKANA') return 'katakana';
+  return reps % 2 === 0 ? 'hiragana' : 'katakana';
 }
 
 export function questionKindFor(reps: number): QuestionKind {
@@ -101,7 +125,7 @@ export async function nextDrillQuestion(
   const typed = isTypedTier(first.entry.reps);
   const question = buildQuestion(kana, {
     kind,
-    script: 'hiragana',
+    script: scriptFor(first.entry.reps),
     // 打たせる段でも問題は組む——正解判定の規則を一本にしておきたい。
     // 選択肢そのものは送らない側で捨てる。
     optionCount: options.optionCount,

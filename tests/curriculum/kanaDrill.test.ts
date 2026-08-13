@@ -4,6 +4,7 @@ import {
   encodeAnswer,
   isTypedTier,
   questionKindFor,
+  scriptFor,
   targetOfQuestionText,
   tierFor,
 } from '../../src/learning/kanaDrill.js';
@@ -180,28 +181,56 @@ describe('render', () => {
 });
 
 describe('drill tiers — §4.3 的输入分档', () => {
-  // 认得 → 想得起 → 打得出。每一档都比上一档少给一点帮助。
+  // 认得 → 想得起 → 片假名 → 打得出。每一档都比上一档少给一点帮助。
   it('climbs from recognising to producing', () => {
     expect(tierFor(0)).toBe('RECOGNIZE');
     expect(tierFor(1)).toBe('RECOGNIZE');
     expect(tierFor(2)).toBe('RECALL');
     expect(tierFor(3)).toBe('RECALL');
-    expect(tierFor(4)).toBe('PRODUCE');
+    expect(tierFor(4)).toBe('KATAKANA');
+    expect(tierFor(5)).toBe('KATAKANA');
+    expect(tierFor(6)).toBe('PRODUCE');
     expect(tierFor(50)).toBe('PRODUCE');
   });
 
   it('only asks the learner to type at the last tier', () => {
     expect(isTypedTier(0)).toBe(false);
-    expect(isTypedTier(3)).toBe(false);
-    expect(isTypedTier(4)).toBe(true);
+    expect(isTypedTier(4)).toBe(false);
+    expect(isTypedTier(6)).toBe(true);
   });
 
-  // 打たせるときは字を見せて読みを訊く。読みを見せて仮名を打たせるのは
-  // かな入力が要るので、この段階では出さない。
   it('shows the glyph when it wants the reading typed', () => {
-    expect(questionKindFor(4)).toBe('GLYPH_TO_ROMAJI');
+    expect(questionKindFor(6)).toBe('GLYPH_TO_ROMAJI');
     expect(questionKindFor(0)).toBe('GLYPH_TO_ROMAJI');
     expect(questionKindFor(2)).toBe('ROMAJI_TO_GLYPH');
+  });
+});
+
+describe('scriptFor — 片假名什么时候进来', () => {
+  // 一上来就两种字体一起记太重。先把平假名坐实。
+  it('stays on hiragana while the glyph is still new', () => {
+    expect(scriptFor(0)).toBe('hiragana');
+    expect(scriptFor(3)).toBe('hiragana');
+  });
+
+  // シ/ツ、ソ/ン 是片假名独有的坑，得有选项并排才逼得出区分。
+  it('introduces katakana with options, not by typing', () => {
+    expect(scriptFor(4)).toBe('katakana');
+    expect(scriptFor(5)).toBe('katakana');
+    expect(isTypedTier(4)).toBe(false);
+  });
+
+  // 只会一种字体等于只读得懂一半。
+  it('alternates both scripts once producing', () => {
+    const seen = new Set([scriptFor(6), scriptFor(7), scriptFor(8)]);
+    expect(seen).toEqual(new Set(['hiragana', 'katakana']));
+  });
+
+  it('covers both scripts across a long history', () => {
+    const scripts = new Set(
+      Array.from({ length: 20 }, (_, reps) => scriptFor(reps)),
+    );
+    expect(scripts).toEqual(new Set(['hiragana', 'katakana']));
   });
 });
 

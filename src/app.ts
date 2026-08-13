@@ -144,10 +144,20 @@ async function runStartupChecks(): Promise<{ dbRoundTripMs: number }> {
   }
   // 往復時間を残す。Railway と Neon が同じ地域に居るかは設定画面を
   // 見ても分かりにくいが、この数字なら一目で分かる——同一地域なら
-  // 数ミリ秒〜十数ミリ秒、大陸を跨げば数百ミリ秒になる（§10）。
-  const probeStart = performance.now();
+  // 数ミリ秒、大陸を跨げば数百ミリ秒になる（§10）。
+  //
+  // 一発目は TLS 握手と接続確立を含むので地域の判断には使えない。
+  // 温めてから複数回測り、中央値を採る。ここは起動時の一度きりで、
+  // 定期的に叩くわけではないので compute を起こし続ける心配は無い。
   await db.execute(sql`select 1`);
-  const dbRoundTripMs = Math.round(performance.now() - probeStart);
+  const samples: number[] = [];
+  for (let i = 0; i < 3; i += 1) {
+    const probeStart = performance.now();
+    await db.execute(sql`select 1`);
+    samples.push(performance.now() - probeStart);
+  }
+  samples.sort((a, b) => a - b);
+  const dbRoundTripMs = Math.round(samples[1] ?? 0);
   // 仮名は 104 個で増えない。揃っていれば一件の SELECT で戻るので、
   // 起動ごとに呼んでも compute を無駄に起こさない（§9.1）。
   const seeded = await ensureKanaSeeded(db);

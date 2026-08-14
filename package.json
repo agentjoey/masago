@@ -18,6 +18,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "build:vocab": "tsx scripts/build-jlpt-vocab.ts",
+    "build:sentences": "tsx scripts/build-sentences.ts",
     "build:kana-audio": "tsx --env-file=.env scripts/build-kana-audio.ts"
   },
   "dependencies": {

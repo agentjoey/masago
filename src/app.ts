@@ -49,6 +49,7 @@ import { createSpeechProviders } from './speech/providerFactory.js';
 import {
   createBot,
   publishCommandList,
+  publishMenuButton,
   startWithRetry,
   type AppContext,
 } from './telegram/index.js';
@@ -468,6 +469,7 @@ async function main(): Promise<void> {
   logger.info('masago started', { version: pkg.version });
   dailyReminder.start();
   await publishCommandList(bot, logger);
+  await publishMenuButton(bot, logger, config.server.miniAppUrl);
   await startWithRetry(bot, {
     logger,
     onStart: (username) => {

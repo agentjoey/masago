@@ -72,6 +72,29 @@ export const BOT_COMMANDS = [
   { command: 'help', description: '使用说明' },
 ] as const;
 
+/**
+ * 入力欄の横に Mini App を開くボタンを置く（V3）。
+ *
+ * URL が無ければ既定のメニューに戻す。開けない入口を残すより、
+ * 無いほうがよい。
+ */
+export async function publishMenuButton(
+  bot: Bot<AppContext>,
+  logger: Logger,
+  miniAppUrl: string | undefined,
+): Promise<void> {
+  try {
+    await bot.api.setChatMenuButton({
+      menu_button:
+        miniAppUrl === undefined
+          ? { type: 'commands' }
+          : { type: 'web_app', text: '进度', web_app: { url: miniAppUrl } },
+    });
+  } catch (error) {
+    logger.warn('could not set the menu button', { error });
+  }
+}
+
 export async function publishCommandList(
   bot: Bot<AppContext>,
   logger: Logger,

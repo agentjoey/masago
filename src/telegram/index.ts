@@ -1,5 +1,5 @@
 export type { AppContext, BotDeps } from './bot.js';
-export { publishCommandList, BOT_COMMANDS, createBot } from './bot.js';
+export { publishMenuButton, publishCommandList, BOT_COMMANDS, createBot } from './bot.js';
 export {
   COMMAND_NOT_ENABLED_REPLY,
   registerCommands,

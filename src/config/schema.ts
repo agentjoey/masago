@@ -43,8 +43,13 @@ const envSchema = z.object({
   LLM_PROMPT_CACHE_ENABLED: envBoolean(true),
 
   // STT
-  // Railway が注入する。健康確認だけを返すサーバが使う。
+  // Railway が注入する。Mini App と健康確認を出すサーバが使う。
   PORT: z.coerce.number().int().positive().default(3000),
+  /**
+   * Mini App の公開 URL（V3）。未設定ならメニューボタンを出さない
+   * ——開けない入口を置いても混乱するだけ。
+   */
+  MINIAPP_URL: z.string().url().optional(),
 
   // V2 は文字入力が主で、音声入力は範囲外（C4）。既定で無効。
   // 有効にするときは ffmpeg が要る——OGG/opus を STT が読める形に直すため。
@@ -182,6 +187,7 @@ export const configSchema = envSchema.transform((env) => ({
   },
   server: {
     port: env.PORT,
+    miniAppUrl: env.MINIAPP_URL,
   },
 }));
 

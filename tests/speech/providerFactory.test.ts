@@ -81,6 +81,7 @@ function makeConfig(overrides?: {
     budget: { dailyCostSoftLimitUsd: 1, monthlyCostSoftLimitUsd: 10 },
     server: {
       port: 3000,
+      miniAppUrl: undefined,
     },
     logging: { level: 'info' },
   };

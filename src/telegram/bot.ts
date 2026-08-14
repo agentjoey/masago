@@ -66,6 +66,7 @@ export const BOT_COMMANDS = [
   { command: 'kana', description: '练五十音' },
   { command: 'vocab', description: '练 N5 单词' },
   { command: 'write', description: '练写句子（助词与语序）' },
+  { command: 'read', description: '读句子，选意思' },
   { command: 'review', description: '只复习到期的' },
   { command: 'progress', description: '学习进度' },
   { command: 'explain', description: '讲解刚才那一项' },

@@ -7,6 +7,7 @@
 import type { Kana } from './kana.js';
 import type { Particle } from './particles.js';
 import type { QuizQuestion } from './quiz.js';
+import type { SentenceQuestion } from './sentenceQuiz.js';
 import type { VocabEntry } from './vocab.js';
 import type { VocabQuestion } from './vocabQuiz.js';
 import type { OrderVerdict } from './writing.js';
@@ -517,4 +518,29 @@ export function renderWritingIntro(introduced: number, total: number): string {
     '',
     '助词是日语最容易出错的地方——先把它们练熟。',
   ].join('\n');
+}
+
+/* ─────────────── 読む練習（docs/scenario-learning.md §5） ─────────────── */
+
+export function renderReadingQuestion(question: SentenceQuestion): string {
+  if (question.kind === 'ZH_TO_JA') {
+    return `这句话日语怎么说？\n\n${question.prompt}`;
+  }
+  return `这句话是什么意思？\n\n${question.prompt}`;
+}
+
+export function renderReadingCorrect(text: string, zh: string): string {
+  return `✅ ${text}\n　${zh}`;
+}
+
+export function renderReadingWrong(
+  text: string,
+  zh: string,
+  chosenLabel: string | undefined,
+): string {
+  const lines = ['❌ 正确答案是：', '', text, `　${zh}`];
+  if (chosenLabel !== undefined && chosenLabel.trim() !== '') {
+    lines.push('', `你选的是「${chosenLabel.trim()}」`);
+  }
+  return lines.join('\n');
 }

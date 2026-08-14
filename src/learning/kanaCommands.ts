@@ -11,6 +11,9 @@ import {
   renderParticleQuestion,
   renderParticleWrong,
   renderQuestion,
+  renderReadingCorrect,
+  renderReadingQuestion,
+  renderReadingWrong,
   renderTeachingCard,
   renderVocabCard,
   renderVocabCorrect,
@@ -48,6 +51,13 @@ import {
   nextVocabQuestion,
   planVocabSession,
 } from './vocabSession.js';
+import {
+  decodeReadingAnswer,
+  encodeReadingAnswer,
+  gradeReading,
+  nextReadingQuestion,
+  readingKindFor,
+} from './readingSession.js';
 import {
   decodeParticleAnswer,
   encodeParticleAnswer,
@@ -117,6 +127,8 @@ export interface KanaCommands {
   vocab(telegramUserId: number): Promise<KanaReply[]>;
   /** 書く練習：助詞の穴埋めと語順の並べ替え。 */
   write(telegramUserId: number): Promise<KanaReply[]>;
+  /** 読む練習：文の意味を四択で選ぶ。 */
+  read(telegramUserId: number): Promise<KanaReply[]>;
   /** 用量と費用。 */
   cost(telegramUserId: number): Promise<KanaReply[]>;
   /** 直近に答えた項目の解説。 */
@@ -273,6 +285,35 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
     });
     if (next === undefined) return [{ text: renderDrillFinished(answered) }];
     return [toWritingReply(next)];
+  }
+
+  async function askNextReading(
+    learnerId: string,
+    answered: number,
+  ): Promise<KanaReply[]> {
+    const next = await nextReadingQuestion(executor, learnerId, {
+      optionCount: deps.optionCount,
+      random: deps.random,
+      kind: readingKindFor(answered),
+    });
+    if (next === undefined) return [{ text: renderDrillFinished(answered) }];
+    return [
+      {
+        text: renderReadingQuestion(next.question),
+        buttons: next.question.options.map((option) => ({
+          label: option.label,
+          data: encodeReadingAnswer(
+            next.question.targetId,
+            option.sentenceId,
+          ),
+        })),
+        // 日本語を見せる向きのときだけ読み上げる。中国語から選ばせる
+        // 問題で日本語を先に流すと、答えを言ってしまう。
+        ...(next.question.kind === 'JA_TO_ZH'
+          ? { speakText: next.sentence.text }
+          : {}),
+      },
+    ];
   }
 
   /** 次の一問。無ければ締めの一言。 */
@@ -441,6 +482,30 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
 
       const now = deps.now();
+
+      // 読解の回答。
+      const readingAnswer = decodeReadingAnswer(callbackData);
+      if (readingAnswer !== undefined) {
+        const graded = gradeReading(readingAnswer);
+        if (graded === undefined) {
+          return [{ text: '这道题已经过期了，发 /read 继续。' }];
+        }
+        const zh = graded.target.zh ?? '';
+        const feedback: KanaReply = graded.correct
+          ? {
+              text: renderReadingCorrect(graded.target.text, zh),
+              speakText: graded.target.text,
+            }
+          : {
+              text: renderReadingWrong(
+                graded.target.text,
+                zh,
+                graded.chosen?.text,
+              ),
+              speakText: graded.target.text,
+            };
+        return [feedback, ...(await askNextReading(learnerId, 1))];
+      }
 
       // 助詞の回答。仮名・単語とは別の接頭辞で先に分ける。
       const particleAnswer = decodeParticleAnswer(callbackData);
@@ -679,6 +744,21 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       }
       replies.push(...(await askNextWriting(learnerId, now, 0)));
       return replies;
+    },
+
+    async read(telegramUserId) {
+      const learnerId = await learnerIdOf(telegramUserId);
+      if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
+      const now = deps.now();
+      const vocab = await planVocabSession(executor, learnerId, now, lessonOptions);
+      if (vocab.stage === 'S0_KANA_ONLY') {
+        return [
+          {
+            text: '先把五十音的清音学完再来读句子——现在句子里的字还读不出来。\n\n发 /kana 继续。',
+          },
+        ];
+      }
+      return askNextReading(learnerId, 0);
     },
 
     async answerTyped(telegramUserId, questionText, typed, askedAt) {

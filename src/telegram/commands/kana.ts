@@ -154,6 +154,7 @@ export function registerKanaCommands(
   bot.command('progress', run((userId) => commands.progress(userId)));
   bot.command('vocab', run((userId) => commands.vocab(userId)));
   bot.command('write', run((userId) => commands.write(userId)));
+  bot.command('read', run((userId) => commands.read(userId)));
   bot.command('cost', run((userId) => commands.cost(userId)));
   bot.command('explain', run((userId) => commands.explain(userId)));
 
@@ -196,8 +197,8 @@ export function registerKanaCommands(
     await send(ctx, replies, deps);
   });
 
-    // 仮名は kq:、単語は vq:、助詞は wp:。どれも同じ経路で採点する。
-  bot.callbackQuery(/^(kq|vq|wp):/, async (ctx) => {
+    // 仮名は kq:、単語は vq:、助詞は wp:、読解は rq:。同じ経路で採点する。
+  bot.callbackQuery(/^(kq|vq|wp|rq):/, async (ctx) => {
     const userId = ctx.from.id;
     // 先に応答しないと、Telegram はボタンを押しっぱなしの表示にする。
     await ctx.answerCallbackQuery();

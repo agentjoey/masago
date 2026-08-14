@@ -24,6 +24,7 @@ import { ensureVocabSeeded } from './learning/vocabSeed.js';
 import { ensureParticlesSeeded } from './learning/particleSeed.js';
 import * as ttsCacheRepo from './db/repositories/ttsCache.js';
 import { speak } from './speech/voiceCache.js';
+import { createSentenceAudioCache } from './speech/sentenceAudio.js';
 import { collectReminderFacts } from './learning/reminderFacts.js';
 import { collectReportFacts } from './learning/reportFacts.js';
 import { reflowVocabulary } from './learning/vocabReflow.js';
@@ -589,6 +590,12 @@ const healthServer = startMiniAppServer({
   botToken: config.telegram.botToken,
   allowedTelegramUserId: config.telegram.allowedUserId,
   kanaAudioDir: config.kana.audioDir,
+  // 例文の読み上げ（Mini App 阅读）。事前生成はしない——3,500 文で
+  // 126 MB になるので、要求されたものだけ合成して覚える。
+  sentenceAudio: createSentenceAudioCache({
+    tts,
+    voiceId: config.tts.minimaxVoiceId,
+  }),
   ...(mcpConfig === undefined ? {} : { mcp: mcpConfig }),
   handlers: {
     progress: async (telegramUserId) => {

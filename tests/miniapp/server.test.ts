@@ -1,8 +1,10 @@
 import { createHmac } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Logger } from '../../src/observability/index.js';
 import { startMiniAppServer } from '../../src/miniapp/server.js';
+import { createSentenceAudioCache } from '../../src/speech/sentenceAudio.js';
+import { SENTENCES } from '../../src/curriculum/sentences.js';
 
 const BOT_TOKEN = '123456:AAExampleTokenForTestsOnly';
 const USER_ID = 7747462834;
@@ -208,5 +210,95 @@ describe('mini app server', () => {
       expect((await fetch(`${base}/audio/kana/ka.mp3`)).status).toBe(200);
       expect(calls).toEqual([]);
     });
+  });
+});
+
+describe('例文の読み上げ（Mini App 阅读）', () => {
+  const realId = SENTENCES[0]?.id ?? '1';
+
+  async function startWithAudio(
+    synthesize = vi.fn(() =>
+      Promise.resolve({ bytes: Buffer.from('MP3DATA'), format: 'mp3' as const }),
+    ),
+  ) {
+    const server = startMiniAppServer({
+      port: 0,
+      version: '9.9.9',
+      kanaAudioDir: 'assets/kana-audio',
+      logger: silentLogger,
+      botToken: BOT_TOKEN,
+      allowedTelegramUserId: USER_ID,
+      sentenceAudio: createSentenceAudioCache({
+        tts: { synthesize } as never,
+        voiceId: 'v',
+      }),
+      handlers: {
+        progress: () => Promise.resolve({}),
+        errors: () => Promise.resolve({}),
+        calendar: () => Promise.resolve({}),
+        kana: () => Promise.resolve({}),
+        practice: () => Promise.resolve({}),
+        reading: () => Promise.resolve({}),
+        readingAnswer: () => Promise.resolve({}),
+      },
+    });
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    close = () => { server.close(); };
+    const { port } = server.address() as AddressInfo;
+    return { base: `http://127.0.0.1:${String(port)}`, synthesize };
+  }
+
+  it('serves the audio for a real sentence', async () => {
+    const { base } = await startWithAudio();
+    const res = await fetch(`${base}/audio/sentence/${realId}.mp3`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('audio/mpeg');
+    expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('MP3DATA');
+  });
+
+  /** 同じ文の音声は変わらない。二度目からはブラウザが持つ。 */
+  it('tells the browser to keep it forever', async () => {
+    const { base } = await startWithAudio();
+    const res = await fetch(`${base}/audio/sentence/${realId}.mp3`);
+    expect(res.headers.get('cache-control')).toContain('immutable');
+    await res.arrayBuffer();
+  });
+
+  /**
+   * 合成は有料の呼び出しに繋がる。実在の文以外では絶対に走らせない
+   * ——id を緩めると、任意の文字列で合成を叩けることになる。
+   */
+  it('never synthesizes for an id that is not a real sentence', async () => {
+    const { base, synthesize } = await startWithAudio();
+    for (const bad of ['0', '9999999999', 'abc', '..%2F..%2Fetc%2Fpasswd']) {
+      const res = await fetch(`${base}/audio/sentence/${bad}.mp3`);
+      expect(res.status, bad).toBe(404);
+      await res.arrayBuffer();
+    }
+    expect(synthesize).not.toHaveBeenCalled();
+  });
+
+  it('answers 503 rather than silence when synthesis fails', async () => {
+    const { base } = await startWithAudio(
+      vi.fn(() => Promise.reject(new Error('tts down'))) as never,
+    );
+    const res = await fetch(`${base}/audio/sentence/${realId}.mp3`);
+    expect(res.status).toBe(503);
+    await res.arrayBuffer();
+  });
+
+  it('is absent when no audio cache is configured', async () => {
+    const { base } = await start();
+    const res = await fetch(`${base}/audio/sentence/${realId}.mp3`);
+    expect(res.status).toBe(404);
+    await res.arrayBuffer();
+  });
+
+  it('synthesizes only once for repeated requests', async () => {
+    const { base, synthesize } = await startWithAudio();
+    for (let i = 0; i < 3; i += 1) {
+      await (await fetch(`${base}/audio/sentence/${realId}.mp3`)).arrayBuffer();
+    }
+    expect(synthesize).toHaveBeenCalledTimes(1);
   });
 });

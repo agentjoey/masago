@@ -7,6 +7,8 @@ import {
   RateLimiter,
   type McpData,
 } from '../mcp/server.js';
+import { SENTENCES_BY_ID } from '../curriculum/sentences.js';
+import type { SentenceAudioCache } from '../speech/sentenceAudio.js';
 import { verifyInitData } from './auth.js';
 import { renderPage } from './page.js';
 
@@ -62,6 +64,13 @@ export interface MiniAppServerOptions {
     readonly baseUrl: string;
     readonly data: McpData;
   };
+  /**
+   * 例文の読み上げ。省略すると `/audio/sentence/*` は 404。
+   *
+   * 仮名の音声と違って事前生成できない——文は 3,500 あり、
+   * 全部合成すると 126 MB になる（実測 36.8 KB/文）。
+   */
+  readonly sentenceAudio?: SentenceAudioCache;
 }
 
 /**
@@ -113,6 +122,11 @@ export function startMiniAppServer(options: MiniAppServerOptions): Server {
     options.mcp === undefined
       ? undefined
       : new RateLimiter(options.mcp.ratePerMinute);
+  /**
+   * 合成は有料の呼び出しに繋がる。id は実在の文に限られるので被害は
+   * 高々 3,500 件だが、連打で枠を焼かれる筋は塞いでおく。
+   */
+  const audioLimiter = new RateLimiter(20);
 
   const server = createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0] ?? '/';
@@ -150,6 +164,16 @@ export function startMiniAppServer(options: MiniAppServerOptions): Server {
             rateLimiter: mcpLimiter,
           });
           if (handled) return;
+        }
+
+        // 例文の音声。要求されたときに合成して覚える。
+        if (path.startsWith('/audio/sentence/')) {
+          if (method !== 'GET' && method !== 'HEAD') {
+            send(res, 405, '', 'text/plain');
+            return;
+          }
+          await serveSentenceAudio(res, path, options, audioLimiter);
+          return;
         }
 
         // 仮名の音声。事前生成済みの静的ファイルで、秘密は含まない。
@@ -277,4 +301,59 @@ async function serveKanaAudio(
   } catch {
     send(res, 404, '', 'text/plain');
   }
+}
+
+/** 文 id は数字のみ。緩めるとパスを遡られる（仮名側と同じ考え方）。 */
+const SENTENCE_ID = /^\d{1,10}$/;
+
+async function serveSentenceAudio(
+  res: ServerResponse,
+  path: string,
+  options: MiniAppServerOptions,
+  limiter: RateLimiter,
+): Promise<void> {
+  const cache = options.sentenceAudio;
+  if (cache === undefined) {
+    send(res, 404, '', 'text/plain');
+    return;
+  }
+
+  const name = path.slice('/audio/sentence/'.length);
+  const id = name.endsWith('.mp3') ? name.slice(0, -4) : name;
+  if (!SENTENCE_ID.test(id)) {
+    send(res, 404, '', 'text/plain');
+    return;
+  }
+  const sentence = SENTENCES_BY_ID.get(id);
+  if (sentence === undefined) {
+    send(res, 404, '', 'text/plain');
+    return;
+  }
+
+  if (!limiter.allow(Date.now())) {
+    res.writeHead(429, { 'content-type': 'text/plain', 'retry-after': '60' });
+    res.end('');
+    return;
+  }
+
+  let bytes: Buffer | undefined;
+  try {
+    bytes = await cache.get(id, sentence.text);
+  } catch (error) {
+    options.logger.warn('could not synthesize sentence audio', { id, error });
+    bytes = undefined;
+  }
+  if (bytes === undefined) {
+    // 音が出せなくても読む練習は続けられる。文字は既に画面にある。
+    send(res, 503, '', 'text/plain');
+    return;
+  }
+
+  res.writeHead(200, {
+    'content-type': 'audio/mpeg',
+    'content-length': String(bytes.byteLength),
+    // 同じ文の音声は変わらない。二度目からはブラウザが持つ。
+    'cache-control': 'public, max-age=31536000, immutable',
+  });
+  res.end(bytes);
 }

@@ -104,7 +104,34 @@ rt { font-size: .5em; color: var(--muted); }
 .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--muted); border-radius: 4px; padding: 0 4px; margin-left: 6px; }
 .empty { color: var(--muted); text-align: center; padding: 32px 0; }
 /* 本文の振り仮名。Telegram のメッセージでは出せない、これが Mini App の主目的。 */
-.sent { font-size: 26px; line-height: 2.6; text-align: center; padding: 8px 0 16px; }
+.sent {
+  font-size: 26px; line-height: 2.6; text-align: center; padding: 8px 0 12px;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.sent:active { opacity: .55; }
+/*
+ * 読み上げ。**カードと同じ地の色にしない**——同色に細い枠だけだと
+ * 溶けて、押せるものだと分からない（実機の写しで確認）。
+ * アクセント色を薄く敷いて、押せる面だと分かるようにする。
+ */
+.speak {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; padding: 11px 0; margin-top: 4px;
+  font: inherit; font-size: 15px; font-weight: 500;
+  border: 0; border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent); cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.speak:active { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.speak[data-state="loading"] {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+}
+.speak[data-state="error"] {
+  color: #c0392b;
+  background: color-mix(in srgb, #c0392b 12%, transparent);
+}
 .sent ruby { ruby-position: over; }
 /* rt の既定は小さすぎて、読みを覚えるための字として読めない。 */
 .sent rt { font-size: 12px; color: var(--muted); letter-spacing: .04em; }
@@ -310,10 +337,37 @@ function readingView(d) {
     '<button class="choice" data-id="' + esc(o.id) + '">' + esc(o.label) + '</button>').join('');
   return '<div class="scenes">' + scenes + '</div>' +
     '<div class="levels">' + levels + '</div>' +
-    '<div class="card"><div class="sent">' + rubyHtml(d.segments) + '</div></div>' +
+    '<div class="card">' +
+      '<div class="sent" data-speak="' + esc(d.sentenceId) + '">' + rubyHtml(d.segments) + '</div>' +
+      '<button class="speak" data-speak="' + esc(d.sentenceId) + '">🔊 朗读</button>' +
+    '</div>' +
     '<div class="muted" style="margin:0 0 8px">这句话是什么意思？</div>' +
     '<div class="choices">' + choices + '</div>' +
     '<div id="verdict"></div>';
+}
+
+/* 朗读。二度目以降はブラウザのキャッシュから出るので、待ちは初回だけ。 */
+let playing = null;
+function speakSentence(id) {
+  const button = view.querySelector('.speak[data-speak="' + CSS.escape(id) + '"]');
+  if (playing !== null) { playing.pause(); playing = null; }
+  if (button !== null) { button.dataset.state = 'loading'; button.textContent = '🔊 加载中…'; }
+
+  const audio = new Audio('/audio/sentence/' + encodeURIComponent(id) + '.mp3');
+  playing = audio;
+  const done = (state, label) => {
+    if (button === null) return;
+    button.dataset.state = state;
+    button.textContent = label;
+  };
+  audio.addEventListener('playing', () => { done('playing', '🔊 朗读中'); });
+  audio.addEventListener('ended', () => { done('', '🔊 朗读'); playing = null; });
+  audio.addEventListener('error', () => {
+    // 音が出せなくても読む練習は続く。文字は画面にある。
+    done('error', '🔇 暂时无法朗读');
+    playing = null;
+  });
+  audio.play().catch(() => { done('error', '🔇 暂时无法朗读'); });
 }
 
 async function answerReading(chosenId) {
@@ -369,6 +423,8 @@ view.addEventListener('click', (e) => {
   if (level !== null) { rubyLevel = level.dataset.level; show('reading'); return; }
   const scene = e.target.closest('.scenes button[data-scene]');
   if (scene !== null) { sceneId = scene.dataset.scene; show('reading'); return; }
+  const speak = e.target.closest('[data-speak]');
+  if (speak !== null) { speakSentence(speak.dataset.speak); return; }
   const choice = e.target.closest('.choice[data-id]');
   if (choice !== null && !choice.disabled) answerReading(choice.dataset.id);
 });

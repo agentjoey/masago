@@ -301,7 +301,7 @@ async function runStartupChecks(): Promise<{ dbRoundTripMs: number }> {
   if (config.mcp.accessToken !== undefined && typeof globalThis.crypto !== 'object') {
     throw new Error(
       `startup check failed: MCP needs global Web Crypto, missing on ${process.version}. ` +
-        'Node 19+ required (package.json engines pins 22.x).',
+        'Node 19+ required (package.json engines pins 24.x).',
     );
   }
   logger.info('runtime', { node: process.version });

@@ -155,6 +155,7 @@ export function registerKanaCommands(
   bot.command('vocab', run((userId) => commands.vocab(userId)));
   bot.command('write', run((userId) => commands.write(userId)));
   bot.command('read', run((userId) => commands.read(userId)));
+  bot.command('compose', run((userId) => commands.compose(userId)));
   bot.command('cost', run((userId) => commands.cost(userId)));
   bot.command('explain', run((userId) => commands.explain(userId)));
 

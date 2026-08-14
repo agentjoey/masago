@@ -2,6 +2,8 @@ import { KANA_BY_ID, kanaOfKey } from '../curriculum/kana.js';
 import {
   renderCorrect,
   renderActivity,
+  renderCompositionQuestion,
+  renderCompositionResult,
   renderCost,
   renderDaily,
   renderDrillFinished,
@@ -52,9 +54,16 @@ import {
   planVocabSession,
 } from './vocabSession.js';
 import {
+  gradeComposition,
+  nextCompositionQuestion,
+  sentenceOfCompositionQuestion,
+  type JudgeDeps,
+} from './compositionSession.js';
+import {
   decodeReadingAnswer,
   encodeReadingAnswer,
   gradeReading,
+  knownWords,
   nextReadingQuestion,
   readingKindFor,
 } from './readingSession.js';
@@ -129,6 +138,8 @@ export interface KanaCommands {
   write(telegramUserId: number): Promise<KanaReply[]>;
   /** 読む練習：文の意味を四択で選ぶ。 */
   read(telegramUserId: number): Promise<KanaReply[]>;
+  /** 中訳日：中国語を見て日本語を書く。 */
+  compose(telegramUserId: number): Promise<KanaReply[]>;
   /** 用量と費用。 */
   cost(telegramUserId: number): Promise<KanaReply[]>;
   /** 直近に答えた項目の解説。 */
@@ -160,6 +171,11 @@ export interface KanaCommandDeps {
   ) => Promise<{ days: { day: string; count: number }[]; streak: number }>;
   readonly dailyLimitUsd: number;
   readonly monthlyLimitUsd: number;
+  /**
+   * 作文の判定。規則で決められなかった分だけここへ来る。
+   * 無ければ /compose は規則層までで止まる。
+   */
+  readonly judgeWriting?: JudgeDeps;
   /** 解説の生成。無ければ /explain は「未启用」と答える。 */
   readonly explainItem?: (target: {
     subject: string;
@@ -312,6 +328,26 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         ...(next.question.kind === 'JA_TO_ZH'
           ? { speakText: next.sentence.text }
           : {}),
+      },
+    ];
+  }
+
+  /**
+   * 中訳日の次の一問。
+   *
+   * 既習の語だけで書ける文を選ぶ。読解と違い、作文は知らない語が
+   * 一つあると手が止まる。
+   */
+  async function askNextComposition(learnerId: string): Promise<KanaReply[]> {
+    const known = await knownWords(executor, learnerId);
+    const question = nextCompositionQuestion({ random: deps.random, known });
+    if (question === undefined) {
+      return [{ text: '现在还没有可以写的句子。先发 /vocab 学一些单词。' }];
+    }
+    return [
+      {
+        text: renderCompositionQuestion(question.meaning),
+        expectsReply: true,
       },
     ];
   }
@@ -761,6 +797,21 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       return askNextReading(learnerId, 0);
     },
 
+    async compose(telegramUserId) {
+      const learnerId = await learnerIdOf(telegramUserId);
+      if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
+      const now = deps.now();
+      const vocab = await planVocabSession(executor, learnerId, now, lessonOptions);
+      if (vocab.stage === 'S0_KANA_ONLY') {
+        return [
+          {
+            text: '先把五十音的清音学完再来写句子。\n\n发 /kana 继续。',
+          },
+        ];
+      }
+      return askNextComposition(learnerId);
+    },
+
     async answerTyped(telegramUserId, questionText, typed, askedAt) {
       // 返信元が出題でなければ、これは答えではなく普通の会話。
       // undefined を返して、呼び出し側に通常の経路へ渡させる。
@@ -773,10 +824,17 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         targetId === undefined && vocabTargetId === undefined
           ? sentenceOfOrderQuestion(questionText)
           : undefined;
-      if (
+      const composeSentenceId =
         targetId === undefined &&
         vocabTargetId === undefined &&
         orderSentenceId === undefined
+          ? sentenceOfCompositionQuestion(questionText)
+          : undefined;
+      if (
+        targetId === undefined &&
+        vocabTargetId === undefined &&
+        orderSentenceId === undefined &&
+        composeSentenceId === undefined
       ) {
         return undefined;
       }
@@ -785,6 +843,32 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
 
       const now = deps.now();
+
+      if (composeSentenceId !== undefined) {
+        if (deps.judgeWriting === undefined) {
+          return [{ text: '写句子判分尚未启用。' }];
+        }
+        const graded = await gradeComposition(
+          composeSentenceId,
+          typed,
+          deps.judgeWriting,
+        );
+        if (graded === undefined) {
+          return [{ text: '这道题已经过期了，发 /compose 继续。' }];
+        }
+        return [
+          {
+            text: renderCompositionResult(
+              graded.correct,
+              graded.reference,
+              graded.note,
+              graded.source !== 'UNJUDGED',
+            ),
+            speakText: graded.reference,
+          },
+          ...(await askNextComposition(learnerId)),
+        ];
+      }
 
       if (orderSentenceId !== undefined) {
         const result = gradeWordOrder(orderSentenceId, typed);

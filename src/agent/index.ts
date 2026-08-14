@@ -37,3 +37,9 @@ export {
 
 export { explain } from './explain.js';
 export type { ExplainTarget, ExplainOptions, Explanation } from './explain.js';
+export { judgeComposition, COMPOSITION_VERDICT } from './composition.js';
+export type {
+  CompositionVerdict,
+  JudgeCompositionInput,
+  JudgeCompositionOptions,
+} from './composition.js';

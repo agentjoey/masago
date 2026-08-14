@@ -544,3 +544,32 @@ export function renderReadingWrong(
   }
   return lines.join('\n');
 }
+
+/* ─────────────── 中訳日（docs/scenario-learning.md §5 書 第 3 档） ─────────────── */
+
+export function renderCompositionQuestion(meaning: string): string {
+  return [
+    '用日语写出这句话的意思：',
+    '',
+    meaning,
+    '',
+    '直接回复日语句子',
+  ].join('\n');
+}
+
+export function renderCompositionResult(
+  correct: boolean,
+  reference: string,
+  note: string,
+  judged: boolean,
+): string {
+  const head = judged
+    ? correct
+      ? '✅ 意思表达出来了'
+      : '❌ 这句还不对'
+    // 判定できなかったときに「間違い」と言わない。判定していないだけ。
+    : '📝 这次没能判分，先看参考句';
+  const lines = [head, '', `参考：${reference}`];
+  if (note.trim() !== '') lines.push('', note.trim());
+  return lines.join('\n');
+}

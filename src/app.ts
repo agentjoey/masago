@@ -4,6 +4,7 @@ import {
   createAnthropicClient,
   createMinimalTutor,
   explain,
+  judgeComposition,
 } from './agent/index.js';
 import { config } from './config/index.js';
 import { createCorrectionTurnHooks } from './corrections/index.js';
@@ -40,7 +41,7 @@ import {
   markDueNow,
   startMiniAppServer,
 } from './miniapp/index.js';
-import { createAnalyzer, crossCheck } from './nlp/index.js';
+import { createAnalyzer, crossCheck, detectGrammarIssues } from './nlp/index.js';
 import {
   createCommandHandlers,
   createHandleUpdate,
@@ -276,6 +277,21 @@ const kanaCommands = createKanaCommands({
       { ...parts, hour: 0, minute: 0 },
       config.session.userTimezone,
     );
+  },
+  /**
+   * 作文の判定。**規則層で決まる分は模型を呼ばない**——同じ入力に
+   * 同じ答えが返り、費用もかからない（§1.5 / scenario-learning.md §5）。
+   */
+  judgeWriting: {
+    analyze: (text: string) => analyzer.tokenize(text),
+    detectIssues: detectGrammarIssues,
+    judge: async (input) => {
+      const verdict = await judgeComposition(input, {
+        client: llmClient,
+        model: config.llm.model,
+      });
+      return verdict;
+    },
   },
   activity: async (learnerId, now) => {
     const since = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);

@@ -246,3 +246,27 @@ describe('進度の分母は一箇所から', () => {
     expect(vocabProgress([]).total).toBeGreaterThan(1000);
   });
 });
+
+describe('「活動」の数え方も一箇所から', () => {
+  /**
+   * Mini App が `learning_events` を無条件に数えていて、bot の /progress は
+   * 回答だけを数えていた。MCP 経由で「今日 22 回・今月 17 問」という
+   * 有り得ない組み合わせが見えて発覚（差の 5 はその日の新出）。
+   *
+   * 連続日数にも効く——新出が入っただけで答えていない日を「学習した日」に
+   * してしまう。
+   */
+  it('counts only answers as activity, never introductions', async () => {
+    const { readFileSync } = await import('node:fs');
+    const stripComments = (source: string): string =>
+      source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    const code = stripComments(readFileSync('src/miniapp/data.ts', 'utf8'));
+
+    // 生のクエリで learningEvents を数え直していないこと。
+    // 数え方は answerTimestampsSince（回答だけを拾う）に寄せる。
+    expect(code).toContain('answerTimestampsSince');
+    expect(code, 'learning_events を直接 select している').not.toMatch(
+      /from\(learningEvents\)/,
+    );
+  });
+});

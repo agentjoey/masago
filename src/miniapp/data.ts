@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lte } from 'drizzle-orm';
+import { and, desc, eq, lte } from 'drizzle-orm';
 import { gojuonGrid } from '../curriculum/gojuon.js';
 import { kanaOfKey } from '../curriculum/kana.js';
 import { kanaProgress } from '../curriculum/lessonPlan.js';
@@ -10,11 +10,11 @@ import {
 import { vocabOfKey } from '../curriculum/vocab.js';
 import type { Executor } from '../db/repositories/executor.js';
 import * as learnerProfiles from '../db/repositories/learnerProfiles.js';
+import * as learningEventsRepo from '../db/repositories/learningEvents.js';
 import * as reviewQueue from '../db/repositories/reviewQueue.js';
 import {
   detectedIssues,
   knowledgeItems,
-  learningEvents,
   reviewQueue as reviewQueueTable,
   sessions,
 } from '../db/schema/index.js';
@@ -81,20 +81,27 @@ export async function loadProgress(
     reviewQueue.countDue(tx, learnerId, now, 'VOCABULARY'),
   ]);
 
-  // 直近 7 日の回答。日界は学習者の時計で切る。
+  /**
+   * 直近 7 日の**回答**。日界は学習者の時計で切る。
+   *
+   * `learning_events` を無条件に数えてはいけない——導入（INTRODUCED）まで
+   * 「やった」に混ざる。実測で、今日の活動が 22 と出ているのに月の回答数は
+   * 17 しか無い、という有り得ない組み合わせが MCP 経由で見えた
+   * （差の 5 はその日の新出）。
+   *
+   * 連続日数にも効く：新しい項目が入っただけで答えていない日を
+   * 「学習した日」と数えてしまう。数え方は `answerTimestampsSince` に
+   * 寄せて、bot 側の `/progress` と同じ定義にする。
+   */
   const since = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
-  const stamps = await tx
-    .select({ createdAt: learningEvents.createdAt })
-    .from(learningEvents)
-    .where(
-      and(
-        eq(learningEvents.learnerId, learnerId),
-        gte(learningEvents.createdAt, since),
-      ),
-    );
+  const stamps = await learningEventsRepo.answerTimestampsSince(
+    tx,
+    learnerId,
+    since,
+  );
   const counts = new Map<string, number>();
-  for (const row of stamps) {
-    const key = localDateKey(row.createdAt, timeZone);
+  for (const at of stamps) {
+    const key = localDateKey(at, timeZone);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   const todayKey = localDateKey(now, timeZone);

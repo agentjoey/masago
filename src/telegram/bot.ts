@@ -81,6 +81,17 @@ export const BOT_COMMANDS = [
  *
  * URL が無ければ既定のメニューに戻す。開けない入口を残すより、
  * 無いほうがよい。
+ *
+ * ## 札は「Masa」
+ *
+ * 中身は進度だけではなくなった（首頁・五十音・読解・誤答・暦）ので、
+ * 「进度」では狭い。名前で呼ぶほうが入口として正しい。
+ *
+ * 仮名（まさみ 等）にしないのは二つの理由から：製品の中で名乗っている
+ * のは一貫して **Masa**（Mini App の副題も MasaGo の字標もそう）で、
+ * ここだけ別名を出すと人物が二人になる。そして学習者はまだ 10/104 字
+ * ——**読めない札は押してよいか分からない札**で、これは学習面ではなく
+ * 操作面の部品（§15 と同じ筋で、分からないことに気づけない側に立つ）。
  */
 export async function publishMenuButton(
   bot: Bot<AppContext>,
@@ -92,7 +103,7 @@ export async function publishMenuButton(
       menu_button:
         miniAppUrl === undefined
           ? { type: 'commands' }
-          : { type: 'web_app', text: '进度', web_app: { url: miniAppUrl } },
+          : { type: 'web_app', text: 'Masa', web_app: { url: miniAppUrl } },
     });
   } catch (error) {
     logger.warn('could not set the menu button', { error });

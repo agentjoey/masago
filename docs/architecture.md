@@ -757,6 +757,12 @@ V1 基线：
 
 # 参考资料
 
+**相关调研**：场景化学习、对话式学习、读写练习的可行性与设计见
+[`scenario-learning.md`](scenario-learning.md)。核心结论：三者的瓶颈都不是
+出题逻辑（已有），而是**句子从哪来**——开源语料够量但含错句，
+而学习者分辨不出错误（§15）。
+
+
 平台能力与价格为 **2026-08-14** 核实的基线，实施前应再次核对：
 
 1. [MiniMax Token Plan 集成指南](https://platform.minimax.io/docs/token-plan/other-tools) — OpenAI/Anthropic 兼容端点与密钥

@@ -12,6 +12,7 @@ import { isCorrectAnswer } from '../../src/curriculum/quiz.js';
 import { VOCAB_BY_ID } from '../../src/curriculum/vocab.js';
 import {
   renderActivity,
+  renderCorrect,
   renderCost,
   renderDaily,
   renderFullProgress,
@@ -36,19 +37,36 @@ describe('callback encoding', () => {
       'ROMAJI_TO_GLYPH',
       'AUDIO_TO_GLYPH',
     ] as const) {
-      const encoded = encodeAnswer('si', 'tu', kind);
-      expect(decodeAnswer(encoded)).toEqual({
-        targetId: 'si',
-        chosenId: 'tu',
-        kind,
-      });
+      for (const script of ['hiragana', 'katakana'] as const) {
+        const encoded = encodeAnswer('si', 'tu', kind, script);
+        expect(decodeAnswer(encoded)).toEqual({
+          targetId: 'si',
+          chosenId: 'tu',
+          kind,
+          script,
+        });
+      }
     }
   });
 
   // Telegram のコールバックは 64 バイトまで。超えると送信時に落ちる。
   it('stays within the telegram callback limit for every kana pair', () => {
-    const longest = encodeAnswer('kya', 'gyo', 'GLYPH_TO_ROMAJI');
+    const longest = encodeAnswer('kya', 'gyo', 'GLYPH_TO_ROMAJI', 'katakana');
     expect(Buffer.byteLength(longest, 'utf8')).toBeLessThanOrEqual(64);
+  });
+
+  /**
+   * 字体を載せる前に配信したボタンが会話に残っている。押しても何も
+   * 起きないのは、壊れていることすら分からない壊れ方——平仮名として
+   * 受ける（字体を足す前は平仮名しか出していなかった段も同じ）。
+   */
+  it('still accepts the payload shape used before the script was carried', () => {
+    expect(decodeAnswer('kq:g:si:tu')).toEqual({
+      targetId: 'si',
+      chosenId: 'tu',
+      kind: 'GLYPH_TO_ROMAJI',
+      script: 'hiragana',
+    });
   });
 
   it('rejects anything malformed', () => {
@@ -148,15 +166,41 @@ describe('render', () => {
   });
 
   it('tells the learner what they picked when wrong', () => {
-    const text = renderWrong(kana('si'), kana('tu'));
+    const text = renderWrong(kana('si'), kana('tu'), undefined, 'hiragana');
     expect(text).toContain('し');
     expect(text).toContain('つ');
     expect(text).toContain('tsu');
   });
 
   it('does not echo the choice when it was the right one', () => {
-    const text = renderWrong(kana('si'), kana('si'));
+    const text = renderWrong(kana('si'), kana('si'), undefined, 'hiragana');
     expect(text).not.toContain('你选的');
+  });
+
+  /**
+   * 判定は**出題と同じ字体**で返す。
+   *
+   * 実際に出た不具合：`キ` と訊いておいて「正确答案是 き」と返していた。
+   * 零基礎の学習者に キ と き が同じ音だと**見抜く手立ては無い**（§15）
+   * ——別の字の話をされたとしか読めないし、押した札（コ）と講評の字（こ）
+   * が違うので、どれを押したのかも突き合わせられない。
+   */
+  it('answers in the same script the question was asked in', () => {
+    const wrong = renderWrong(kana('ki'), kana('ko'), undefined, 'katakana');
+    expect(wrong).toContain('キ');
+    expect(wrong).toContain('コ');
+    expect(wrong).not.toContain('き');
+    expect(wrong).not.toContain('こ');
+
+    expect(renderCorrect(kana('ki'), 'katakana')).toContain('キ');
+    expect(renderCorrect(kana('ki'), 'katakana')).not.toContain('き');
+  });
+
+  it('still uses hiragana when that is what was asked', () => {
+    const wrong = renderWrong(kana('ki'), kana('ko'), undefined, 'hiragana');
+    expect(wrong).toContain('き');
+    expect(wrong).toContain('こ');
+    expect(renderCorrect(kana('ki'), 'hiragana')).toContain('き');
   });
 
   it('renders a progress bar of fixed width', () => {
@@ -316,13 +360,15 @@ describe('renderQuestion — typed variant', () => {
 
 describe('renderWrong — typed answers', () => {
   it('echoes what the learner typed', () => {
-    const text = renderWrong(kana('si'), undefined, 'sa');
+    const text = renderWrong(kana('si'), undefined, 'sa', 'hiragana');
     expect(text).toContain('し');
     expect(text).toContain('「sa」');
   });
 
   it('does not echo an empty answer', () => {
-    expect(renderWrong(kana('si'), undefined, '   ')).not.toContain('你打的是');
+    expect(
+      renderWrong(kana('si'), undefined, '   ', 'hiragana'),
+    ).not.toContain('你打的是');
   });
 });
 

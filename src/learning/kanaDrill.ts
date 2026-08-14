@@ -245,34 +245,68 @@ export async function gradeTypedAndRecord(
  * 字形だけの行を探す。説明文に紛れた同じ字を拾わないため、行全体が
  * 一致するものだけを見る。
  */
-export function targetOfQuestionText(text: string): string | undefined {
+function kanaOfQuestionText(text: string): { kana: Kana; glyph: string } | undefined {
   for (const line of text.split('\n')) {
-    const kana = KANA_BY_GLYPH.get(line.trim());
-    if (kana !== undefined) return kana.id;
+    const glyph = line.trim();
+    const kana = KANA_BY_GLYPH.get(glyph);
+    if (kana !== undefined) return { kana, glyph };
   }
   return undefined;
 }
 
-/** コールバックに載せる文字列。64 バイト制限があるので短く。 */
+export function targetOfQuestionText(text: string): string | undefined {
+  return kanaOfQuestionText(text)?.kana.id;
+}
+
+/**
+ * 打ち込みの講評をどちらの字体で返すか。
+ *
+ * 出題文に載っている字そのものが根拠——`キ` と訊いたなら `キ` で返す。
+ * reps から引き直すと採点で FSRS が進んだ後の値になり、次の問題の
+ * 字体が出てしまう。
+ */
+export function scriptOfQuestionText(text: string): KanaScript {
+  const found = kanaOfQuestionText(text);
+  if (found === undefined) return 'hiragana';
+  return found.glyph === found.kana.katakana ? 'katakana' : 'hiragana';
+}
+
+/**
+ * コールバックに載せる文字列。64 バイト制限があるので短く。
+ *
+ * **字体も載せる。** 採点の時点では「どちらの字体で訊いたか」がもう
+ * 分からない——reps から引き直すと、採点で FSRS が進んだ**後**の値に
+ * なるので次の問題の字体が出る。訊いた側が答えを持って回るしかない。
+ */
 export function encodeAnswer(
   targetId: string,
   chosenId: string,
   kind: QuestionKind,
+  script: KanaScript,
 ): string {
   const k = kind === 'GLYPH_TO_ROMAJI' ? 'g' : kind === 'ROMAJI_TO_GLYPH' ? 'r' : 'a';
-  return `kq:${k}:${targetId}:${chosenId}`;
+  return `kq:${k}:${script === 'katakana' ? 'k' : 'h'}:${targetId}:${chosenId}`;
 }
 
 export interface DecodedAnswer {
   readonly targetId: string;
   readonly chosenId: string;
   readonly kind: QuestionKind;
+  readonly script: KanaScript;
 }
 
 export function decodeAnswer(data: string): DecodedAnswer | undefined {
   const parts = data.split(':');
-  if (parts.length !== 4 || parts[0] !== 'kq') return undefined;
-  const [, k, targetId, chosenId] = parts;
+  if (parts[0] !== 'kq') return undefined;
+  // 字体を載せる前の形（4 節）も受ける。配信済みの会話に残っている
+  // ボタンが黙って効かなくなるのを避ける——押しても何も起きないのは、
+  // 壊れていることすら分からない壊れ方。
+  const legacy = parts.length === 4;
+  if (!legacy && parts.length !== 5) return undefined;
+  const k = parts[1];
+  const s = legacy ? 'h' : parts[2];
+  const targetId = legacy ? parts[2] : parts[3];
+  const chosenId = legacy ? parts[3] : parts[4];
   if (targetId === undefined || chosenId === undefined) return undefined;
   const kind: QuestionKind | undefined =
     k === 'g'
@@ -283,8 +317,14 @@ export function decodeAnswer(data: string): DecodedAnswer | undefined {
           ? 'AUDIO_TO_GLYPH'
           : undefined;
   if (kind === undefined) return undefined;
+  if (s !== 'h' && s !== 'k') return undefined;
   if (!KANA_BY_ID.has(targetId) || !KANA_BY_ID.has(chosenId)) return undefined;
-  return { targetId, chosenId, kind };
+  return {
+    targetId,
+    chosenId,
+    kind,
+    script: s === 'k' ? 'katakana' : 'hiragana',
+  };
 }
 
 /**

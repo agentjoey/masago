@@ -4,7 +4,7 @@
  * 説明は中国語。ゼロから始める人に日本語で案内文を書いても読めない——
  * 教える対象の日本語と、操作を説明する言葉は分ける。
  */
-import type { Kana } from './kana.js';
+import { kanaGlyph, type Kana, type KanaScript } from './kana.js';
 import type { Particle } from './particles.js';
 import type { QuizQuestion } from './quiz.js';
 import type { SentenceQuestion } from './sentenceQuiz.js';
@@ -82,18 +82,27 @@ export function renderQuestion(
   }
 }
 
-export function renderCorrect(kana: Kana): string {
-  return `✅ ${kana.hiragana} = ${kana.romaji}`;
+/**
+ * 講評は**訊いたのと同じ字体**で返す。
+ *
+ * ここを平仮名に固定していたせいで、`キ` と訊いて「正确答案是 き」と
+ * 返していた。零基礎の学習者に キ と き が同じ音だと見抜く手立ては
+ * 無い（§15）——別の字の話に見えるし、押した札（コ）と講評の字（こ）
+ * が違うので、自分が何を押したのかも突き合わせられない。
+ */
+export function renderCorrect(kana: Kana, script: KanaScript): string {
+  return `✅ ${kanaGlyph(kana, script)} = ${kana.romaji}`;
 }
 
 export function renderWrong(
   target: Kana,
   chosen: Kana | undefined,
-  typed?: string,
+  typed: string | undefined,
+  script: KanaScript,
 ): string {
-  const lines = [`❌ 正确答案是 ${target.hiragana}（${target.romaji}）`];
+  const lines = [`❌ 正确答案是 ${kanaGlyph(target, script)}（${target.romaji}）`];
   if (chosen !== undefined && chosen.id !== target.id) {
-    lines.push(`你选的 ${chosen.hiragana} 读作 ${chosen.romaji}`);
+    lines.push(`你选的 ${kanaGlyph(chosen, script)} 读作 ${chosen.romaji}`);
   } else if (typed !== undefined && typed.trim() !== '') {
     // 打ち間違いか、別の字と取り違えたのか。返した文字をそのまま見せると
     // 「何を打ったか」を自分で確かめられる。

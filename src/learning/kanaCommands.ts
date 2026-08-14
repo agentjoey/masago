@@ -46,6 +46,7 @@ import {
   gradeAndRecord,
   gradeTypedAndRecord,
   nextDrillQuestion,
+  scriptOfQuestionText,
   targetOfQuestionText,
   targetOfVocabQuestionText,
 } from './kanaDrill.js';
@@ -415,6 +416,7 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
             next.question.targetId,
             option.kanaId,
             next.question.kind,
+            next.question.script,
           ),
         })),
       },
@@ -691,9 +693,14 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       );
 
       const feedback: KanaReply = graded.correct
-        ? { text: renderCorrect(graded.target) }
+        ? { text: renderCorrect(graded.target, decoded.script) }
         : {
-            text: renderWrong(graded.target, graded.chosen),
+            text: renderWrong(
+              graded.target,
+              graded.chosen,
+              undefined,
+              decoded.script,
+            ),
             // 間違えた字は音でも確かめさせる。
             audioKanaId: graded.target.id,
           };
@@ -1040,10 +1047,11 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         responseMsOf(askedAt, now),
       );
 
+      const script = scriptOfQuestionText(questionText);
       const feedback: KanaReply = graded.correct
-        ? { text: renderCorrect(graded.target) }
+        ? { text: renderCorrect(graded.target, script) }
         : {
-            text: renderWrong(graded.target, undefined, typed),
+            text: renderWrong(graded.target, undefined, typed, script),
             audioKanaId: graded.target.id,
           };
 

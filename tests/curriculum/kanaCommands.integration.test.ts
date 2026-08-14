@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { KANA_BY_ID } from '../../src/curriculum/kana.js';
+import { decodeAnswer } from '../../src/learning/kanaDrill.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 try {
@@ -126,17 +127,17 @@ describe.skipIf(!HAS_DB)('kana commands', () => {
       expect(question?.buttons).toHaveLength(4);
       // 未習の字を誤答に混ぜない——導入した 5 つの中から出す
       for (const button of question?.buttons ?? []) {
-        expect(button.data).toMatch(/^kq:[gra]:[a-z]+:[a-z]+$/);
-        const chosen = button.data.split(':')[3];
+        expect(button.data).toMatch(/^kq:[gra]:[hk]:[a-z]+:[a-z]+$/);
+        const chosen = decodeAnswer(button.data)?.chosenId;
         expect(['a', 'i', 'u', 'e', 'o']).toContain(chosen);
       }
 
       // 正解を選ぶ
       const first = question?.buttons?.[0];
       if (first === undefined) throw new Error('no buttons');
-      const targetId = first.data.split(':')[2];
+      const targetId = decodeAnswer(first.data)?.targetId;
       const correct = (question?.buttons ?? []).find(
-        (b) => b.data.split(':')[3] === targetId,
+        (b) => decodeAnswer(b.data)?.chosenId === targetId,
       );
       if (correct === undefined) throw new Error('no correct option');
 
@@ -162,8 +163,10 @@ describe.skipIf(!HAS_DB)('kana commands', () => {
       const drill = await commands.drill(TELEGRAM_USER_ID);
       const question = drill[drill.length - 1];
       const buttons = question?.buttons ?? [];
-      const targetId = buttons[0]?.data.split(':')[2];
-      const wrong = buttons.find((b) => b.data.split(':')[3] !== targetId);
+      const targetId = decodeAnswer(buttons[0]?.data ?? '')?.targetId;
+      const wrong = buttons.find(
+        (b) => decodeAnswer(b.data)?.chosenId !== targetId,
+      );
       if (wrong === undefined) throw new Error('no wrong option available');
 
       const answered = await commands.answer(TELEGRAM_USER_ID, wrong.data, clock);
@@ -195,8 +198,10 @@ describe.skipIf(!HAS_DB)('kana commands', () => {
       const drill = await commands.drill(TELEGRAM_USER_ID);
       const question = drill[drill.length - 1];
       const buttons = question?.buttons ?? [];
-      const targetId = buttons[0]?.data.split(':')[2];
-      const correct = buttons.find((b) => b.data.split(':')[3] === targetId);
+      const targetId = decodeAnswer(buttons[0]?.data ?? '')?.targetId;
+      const correct = buttons.find(
+        (b) => decodeAnswer(b.data)?.chosenId === targetId,
+      );
       if (correct === undefined) throw new Error('no correct option');
 
       // 未来から来た問題（時計のずれ）。負の応答時間を信じてはいけない。
@@ -306,9 +311,11 @@ describe.skipIf(!HAS_DB)('typed answers (§4.3 第二档)', () => {
 
           if (question.buttons !== undefined) {
             sawButtons += 1;
-            const targetId = question.buttons[0]?.data.split(':')[2];
+            const targetId = decodeAnswer(
+              question.buttons[0]?.data ?? '',
+            )?.targetId;
             const correct = question.buttons.find(
-              (b) => b.data.split(':')[3] === targetId,
+              (b) => decodeAnswer(b.data)?.chosenId === targetId,
             );
             if (correct === undefined) throw new Error('no correct option');
             await commands.answer(userId, correct.data, clock);

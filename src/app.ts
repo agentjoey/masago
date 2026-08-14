@@ -68,7 +68,12 @@ import {
   type AppContext,
 } from './telegram/index.js';
 import { createVoiceDownloader } from './telegram/voice.js';
-import { createRecorder, recordUsage, summarizeUsage } from './usage/index.js';
+import {
+  createRecorder,
+  recordUsage,
+  summarizeUsage,
+  type CostSummary,
+} from './usage/index.js';
 import pkg from '../package.json' with { type: 'json' };
 
 const logger = createLogger({ level: config.logging.level });
@@ -324,6 +329,27 @@ function learnerDayStart(now: Date): Date {
   );
 }
 
+/**
+ * 当月の利用記録を集計する。/cost と Mini App の設定画面が同じ数字を
+ * 出すために**同じ関数**を通す——別々に集計すると「同じ数字の二重計算」
+ * がまた一つ増える。
+ */
+async function monthUsageSummary(now: Date): Promise<CostSummary> {
+  // 当月ぶんだけ読む。全期間を舐めると行が増えるほど遅くなる。
+  const monthStart = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+  );
+  const records = await usageRecordsRepo.findCreatedBetween(
+    db,
+    monthStart,
+    new Date(now.getTime() + 60_000),
+  );
+  return summarizeUsage(records, {
+    timezone: config.session.userTimezone,
+    now,
+  });
+}
+
 const kanaCommands = createKanaCommands({
   executor: db,
   now: () => new Date(),
@@ -422,19 +448,7 @@ const kanaCommands = createKanaCommands({
     return result.text;
   },
   costSummary: async (now) => {
-    // 当月ぶんだけ読む。全期間を舐めると行が増えるほど遅くなる。
-    const monthStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-    );
-    const records = await usageRecordsRepo.findCreatedBetween(
-      db,
-      monthStart,
-      new Date(now.getTime() + 60_000),
-    );
-    const summary = summarizeUsage(records, {
-      timezone: config.session.userTimezone,
-      now,
-    });
+    const summary = await monthUsageSummary(now);
     return {
       todayUsd: summary.today.costUsd,
       monthUsd: summary.thisMonth.costUsd,
@@ -653,10 +667,22 @@ const mcpConfig =
         },
       };
 
+// Mini App の「続きから」ボタンは t.me 深リンクで bot 側コマンドへ飛ばす。
+// username は起動時に一度だけ引く。取れなくても Mini App 自体は動く
+// （ボタンがただ閉じるだけになる）ので、失敗で起動は止めない。
+const botUsername = await bot.api
+  .getMe()
+  .then((me) => me.username)
+  .catch((error: unknown) => {
+    logger.warn('getMe failed; mini app deep links disabled', { error });
+    return undefined;
+  });
+
 const healthServer = startMiniAppServer({
   port: config.server.port,
   version: pkg.version,
   logger,
+  ...(botUsername === undefined ? {} : { botUsername }),
   botToken: config.telegram.botToken,
   allowedTelegramUserId: config.telegram.allowedUserId,
   kanaAudioDir: config.kana.audioDir,
@@ -692,6 +718,18 @@ const healthServer = startMiniAppServer({
       const learnerId = await findLearnerId(db, telegramUserId);
       if (learnerId === undefined) return [];
       return loadKanaTable(db, learnerId, new Date());
+    },
+    // 設定画面の「用量与成本」。/cost と同じ集計を通す（monthUsageSummary）。
+    cost: async () => {
+      const summary = await monthUsageSummary(new Date());
+      return {
+        todayUsd: summary.today.costUsd,
+        weekUsd: summary.thisWeek.costUsd,
+        monthUsd: summary.thisMonth.costUsd,
+        dailyLimitUsd: config.budget.dailyCostSoftLimitUsd,
+        monthlyLimitUsd: config.budget.monthlyCostSoftLimitUsd,
+        unknownCostCalls: summary.thisMonth.unknownCostCalls,
+      };
     },
     practice: async (telegramUserId, key) => {
       const learnerId = await findLearnerId(db, telegramUserId);

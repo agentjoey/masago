@@ -1,6 +1,7 @@
 import { and, desc, eq, lte } from 'drizzle-orm';
 import { gojuonGrid } from '../curriculum/gojuon.js';
 import { kanaOfKey } from '../curriculum/kana.js';
+import { particleOfKey, particleProgress } from '../curriculum/particles.js';
 import { kanaProgress } from '../curriculum/lessonPlan.js';
 import {
   currentVocabLevel,
@@ -36,6 +37,8 @@ export interface ProgressPayload {
     levelIntroduced: number;
     levelTotal: number;
   };
+  /** 助詞。/today は既に出しているので、ここに無いとまた数字が割れる。 */
+  readonly grammar: { introduced: number; total: number; due: number };
   readonly activity: readonly { day: string; count: number }[];
   readonly streak: number;
 }
@@ -76,10 +79,23 @@ export async function loadProgress(
   const vocabIds = await introducedIds(tx, learnerId, 'VOCABULARY');
   const level = currentVocabLevel(vocabIds);
 
-  const [kanaDue, vocabDue] = await Promise.all([
+  const [kanaDue, vocabDue, grammarDue] = await Promise.all([
     reviewQueue.countDue(tx, learnerId, now, 'KANA'),
     reviewQueue.countDue(tx, learnerId, now, 'VOCABULARY'),
+    reviewQueue.countDue(tx, learnerId, now, 'GRAMMAR'),
   ]);
+  const grammarKeys = await reviewQueue.listIntroducedKeys(
+    tx,
+    learnerId,
+    'GRAMMAR',
+  );
+  const grammar = particleProgress(
+    new Set(
+      grammarKeys
+        .map((key) => particleOfKey(key)?.id)
+        .filter((id): id is string => id !== undefined),
+    ),
+  );
 
   /**
    * 直近 7 日の**回答**。日界は学習者の時計で切る。
@@ -132,6 +148,7 @@ export async function loadProgress(
       levelIntroduced: byLevel.introduced,
       levelTotal: byLevel.total,
     },
+    grammar: { ...grammar, due: grammarDue },
     activity,
     streak,
   };

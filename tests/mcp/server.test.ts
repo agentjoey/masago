@@ -54,6 +54,7 @@ function start(withMcp: boolean): Promise<string> {
       errors: () => Promise.resolve({}),
       calendar: () => Promise.resolve({}),
       kana: () => Promise.resolve({}),
+      cost: () => Promise.resolve({}),
       practice: () => Promise.resolve({}),
       reading: () => Promise.resolve({}),
       readingAnswer: () => Promise.resolve({}),

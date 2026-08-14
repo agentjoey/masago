@@ -51,6 +51,7 @@ async function start(handlers?: Partial<Record<string, () => Promise<unknown>>>)
       errors: make('errors'),
       calendar: make('calendar'),
       kana: make('kana'),
+      cost: make('cost'),
       practice: async (_userId, key) => {
         calls.push(`practice:${key}`);
         return { ok: true };
@@ -90,6 +91,9 @@ describe('mini app server', () => {
     expect(html).toContain('rt {');
     // Telegram の WebApp SDK を読み込む（initData はここからしか取れない）
     expect(html).toContain('telegram-web-app.js');
+    // 原生の骨格：下端タブ栏と iPhone の安全域。消えたら「ただの Web ページ」に戻る。
+    expect(html).toContain('id="tabbar"');
+    expect(html).toContain('safe-area-inset-bottom');
   });
 
   // 探针は 30 秒級で叩いてくる。ここで DB を触ると Neon が寝なくなる（§6）。
@@ -163,11 +167,17 @@ describe('mini app server', () => {
 
   it('serves each api route', async () => {
     const { base, calls } = await start();
-    for (const path of ['/api/progress', '/api/errors', '/api/calendar', '/api/kana']) {
+    for (const path of [
+      '/api/progress',
+      '/api/errors',
+      '/api/calendar',
+      '/api/kana',
+      '/api/cost',
+    ]) {
       const res = await post(base, path, { initData: validInitData() });
       expect(res.status, path).toBe(200);
     }
-    expect(calls).toEqual(['progress', 'errors', 'calendar', 'kana']);
+    expect(calls).toEqual(['progress', 'errors', 'calendar', 'kana', 'cost']);
   });
 
   it('passes the item key through to practice', async () => {
@@ -237,6 +247,7 @@ describe('例文の読み上げ（Mini App 阅读）', () => {
         errors: () => Promise.resolve({}),
         calendar: () => Promise.resolve({}),
         kana: () => Promise.resolve({}),
+        cost: () => Promise.resolve({}),
         practice: () => Promise.resolve({}),
         reading: () => Promise.resolve({}),
         readingAnswer: () => Promise.resolve({}),

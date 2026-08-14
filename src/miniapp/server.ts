@@ -28,6 +28,8 @@ export interface MiniAppHandlers {
   kana(telegramUserId: number): Promise<unknown>;
   /** 「これをもう一度」。期日を今にする。 */
   practice(telegramUserId: number, knowledgeKey: string): Promise<unknown>;
+  /** 設定画面の「用量与成本」。/cost と同じ集計を返す。 */
+  cost(telegramUserId: number): Promise<unknown>;
   /** 読解の一問。ruby の段と場面を受け取る。 */
   reading(
     telegramUserId: number,
@@ -49,6 +51,12 @@ export interface MiniAppServerOptions {
   readonly version: string;
   readonly logger: Logger;
   readonly botToken: string;
+  /**
+   * bot の username（@ なし）。Mini App の「続きから」ボタンが
+   * `t.me/<username>?start=<cmd>` の深リンクで bot 側コマンドに飛ぶ。
+   * 無ければボタンはただ Mini App を閉じる。
+   */
+  readonly botUsername?: string;
   /** この利用者以外は拒否する。V1 は単一利用者（§10）。 */
   readonly allowedTelegramUserId: number;
   readonly handlers: MiniAppHandlers;
@@ -149,7 +157,17 @@ export function startMiniAppServer(options: MiniAppServerOptions): Server {
             send(res, 405, '', 'text/plain');
             return;
           }
-          send(res, 200, renderPage(), 'text/html; charset=utf-8');
+          send(
+            res,
+            200,
+            renderPage({
+              version: options.version,
+              ...(options.botUsername === undefined
+                ? {}
+                : { botUsername: options.botUsername }),
+            }),
+            'text/html; charset=utf-8',
+          );
           return;
         }
 
@@ -254,6 +272,7 @@ const API_ROUTES: Record<
   '/api/errors': (handlers, userId) => handlers.errors(userId),
   '/api/calendar': (handlers, userId) => handlers.calendar(userId),
   '/api/kana': (handlers, userId) => handlers.kana(userId),
+  '/api/cost': (handlers, userId) => handlers.cost(userId),
   '/api/practice': (handlers, userId, body) =>
     handlers.practice(
       userId,

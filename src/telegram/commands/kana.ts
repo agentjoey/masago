@@ -146,7 +146,25 @@ export function registerKanaCommands(
 
   // Telegram は bot を開いた時点で /start を送る。ここを拾わないと
   // 初対面が「未知命令」になる。
-  bot.command('start', run((userId) => commands.start(userId)));
+  //
+  // payload 付き（`/start kana` など）は Mini App の「続きから」ボタンの
+  // 着地点。t.me/<bot>?start=<cmd> の深リンクが既存コマンドに流れる。
+  // 未知の payload は普通の /start として扱う——壊れたリンクで沈黙しない。
+  const startTargets: Record<string, (userId: number) => Promise<KanaReply[]>> =
+    {
+      kana: (userId) => commands.drill(userId),
+      review: (userId) => commands.review(userId),
+      vocab: (userId) => commands.vocab(userId),
+      write: (userId) => commands.write(userId),
+      read: (userId) => commands.read(userId),
+      domain: (userId) => commands.domain(userId),
+      today: (userId) => commands.today(userId),
+    };
+  bot.command('start', (ctx) => {
+    const payload = typeof ctx.match === 'string' ? ctx.match.trim() : '';
+    const target = startTargets[payload];
+    return run(target ?? ((userId) => commands.start(userId)))(ctx);
+  });
   bot.command('help', run((userId) => commands.start(userId)));
   bot.command('today', run((userId) => commands.today(userId)));
   bot.command('kana', run((userId) => commands.drill(userId)));

@@ -15,6 +15,7 @@ import {
   sessionStatus,
   turnInputType,
   turnStatus,
+  issueSource,
 } from './enums.js';
 import { learnerProfiles } from './learner.js';
 import { knowledgeItems } from './learning.js';
@@ -83,6 +84,14 @@ export const detectedIssues = pgTable(
     reason: text('reason'),
     naturalAlternative: text('natural_alternative'),
     importance: importance('importance').default('MEDIUM').notNull(),
+    /**
+     * 誰が見つけたか。`LLM` か `RULE`（形態素解析＋規則、§8）。
+     *
+     * 混ぜて保存するので、後から「規則が拾った分だけ」を見たり、
+     * 両者の一致率を測ったりできる。区別を持たないと、Error Bank の
+     * 信頼度を上げたのか下げたのか確かめようがない。
+     */
+    source: issueSource('source').default('LLM').notNull(),
     surfacedAt: timestamp('surfaced_at', { withTimezone: true }),
     retryStatus: retryStatus('retry_status').default('NONE').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })

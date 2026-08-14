@@ -40,6 +40,7 @@ const RETRY_ISSUE: PendingIssue = {
   importance: 'HIGH',
   surfacedAt: new Date('2026-08-01T00:00:00Z'),
   retryStatus: 'REQUESTED',
+  source: 'LLM' as const,
   createdAt: new Date('2026-08-01T00:00:00Z'),
 };
 

@@ -13,6 +13,23 @@ export interface TextTurnDeps {
   tutor?: Tutor;
   corrections?: CorrectionTurnHooks;
   logger?: Logger;
+  /**
+   * 形態素解析による裏取り（§8）。渡されなければ模型の判定だけを使う。
+   *
+   * 規則で確実に言える誤り（助詞・活用）は、模型より確かで安く、
+   * 何より同じ入力に同じ判定を返す。
+   */
+  grammarCheck?: (
+    text: string,
+    alreadyDetected: readonly { knowledgeKey: string; original: string }[],
+  ) => Promise<
+    readonly {
+      knowledgeKey: string;
+      original: string;
+      recommended: string | undefined;
+      explanation: string;
+    }[]
+  >;
 }
 
 export interface TextTurnInput {
@@ -143,6 +160,25 @@ export async function runTextTurn(
     reply = response.correctionCard
       ? `${response.replyText}\n\n${response.correctionCard}`
       : response.replyText;
+
+    // 規則側の裏取りは返事を送った後の記録にだけ効かせる。会話の流れは
+    // 変えない——纠错のリズムは Correction Scheduler が持っている（§R6）。
+    if (deps.grammarCheck !== undefined) {
+      const detected = response.detectedIssues ?? [];
+      const extra = await deps.grammarCheck(
+        input.text,
+        detected.map((issue) => ({
+          knowledgeKey: issue.knowledgeKey,
+          original: issue.original,
+        })),
+      );
+      if (extra.length > 0) {
+        deps.logger?.info('grammar rules caught what the model missed', {
+          turnId: turn.id,
+          keys: extra.map((issue) => issue.knowledgeKey),
+        });
+      }
+    }
   } else {
     reply = `echo: ${input.text}`;
   }

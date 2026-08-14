@@ -34,6 +34,7 @@ const SURFACE_ISSUE: PendingIssue = {
   importance: 'HIGH',
   surfacedAt: null,
   retryStatus: 'NONE',
+  source: 'LLM' as const,
   createdAt: new Date('2026-08-01T00:00:00Z'),
 };
 

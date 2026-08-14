@@ -1,0 +1,1028 @@
+{
+ "犬を三匹あります": [
+  {
+   "surface": "犬",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "犬",
+   "reading": "イヌ"
+  },
+  {
+   "surface": "を",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "を",
+   "reading": "ヲ"
+  },
+  {
+   "surface": "三",
+   "pos": "名詞",
+   "posDetail": "数",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "三",
+   "reading": "サン"
+  },
+  {
+   "surface": "匹",
+   "pos": "名詞",
+   "posDetail": "接尾",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "匹",
+   "reading": "ヒキ"
+  },
+  {
+   "surface": "あり",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "五段・ラ行",
+   "conjugatedForm": "連用形",
+   "basicForm": "ある",
+   "reading": "アリ"
+  },
+  {
+   "surface": "ます",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・マス",
+   "conjugatedForm": "基本形",
+   "basicForm": "ます",
+   "reading": "マス"
+  }
+ ],
+ "公園に猫をいます": [
+  {
+   "surface": "公園",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "公園",
+   "reading": "コウエン"
+  },
+  {
+   "surface": "に",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "に",
+   "reading": "ニ"
+  },
+  {
+   "surface": "猫",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "猫",
+   "reading": "ネコ"
+  },
+  {
+   "surface": "を",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "を",
+   "reading": "ヲ"
+  },
+  {
+   "surface": "い",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "一段",
+   "conjugatedForm": "連用形",
+   "basicForm": "いる",
+   "reading": "イ"
+  },
+  {
+   "surface": "ます",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・マス",
+   "conjugatedForm": "基本形",
+   "basicForm": "ます",
+   "reading": "マス"
+  }
+ ],
+ "本を読みます": [
+  {
+   "surface": "本",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "本",
+   "reading": "ホン"
+  },
+  {
+   "surface": "を",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "を",
+   "reading": "ヲ"
+  },
+  {
+   "surface": "読み",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "五段・マ行",
+   "conjugatedForm": "連用形",
+   "basicForm": "読む",
+   "reading": "ヨミ"
+  },
+  {
+   "surface": "ます",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・マス",
+   "conjugatedForm": "基本形",
+   "basicForm": "ます",
+   "reading": "マス"
+  }
+ ],
+ "昨日、友達と映画を見るました": [
+  {
+   "surface": "昨日",
+   "pos": "名詞",
+   "posDetail": "副詞可能",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "昨日",
+   "reading": "キノウ"
+  },
+  {
+   "surface": "、",
+   "pos": "記号",
+   "posDetail": "読点",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "、",
+   "reading": "、"
+  },
+  {
+   "surface": "友達",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "友達",
+   "reading": "トモダチ"
+  },
+  {
+   "surface": "と",
+   "pos": "助詞",
+   "posDetail": "並立助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "と",
+   "reading": "ト"
+  },
+  {
+   "surface": "映画",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "映画",
+   "reading": "エイガ"
+  },
+  {
+   "surface": "を",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "を",
+   "reading": "ヲ"
+  },
+  {
+   "surface": "見る",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "一段",
+   "conjugatedForm": "基本形",
+   "basicForm": "見る",
+   "reading": "ミル"
+  },
+  {
+   "surface": "まし",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・マス",
+   "conjugatedForm": "連用形",
+   "basicForm": "ます",
+   "reading": "マシ"
+  },
+  {
+   "surface": "た",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・タ",
+   "conjugatedForm": "基本形",
+   "basicForm": "た",
+   "reading": "タ"
+  }
+ ],
+ "昨日、友達と映画を見ました": [
+  {
+   "surface": "昨日",
+   "pos": "名詞",
+   "posDetail": "副詞可能",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "昨日",
+   "reading": "キノウ"
+  },
+  {
+   "surface": "、",
+   "pos": "記号",
+   "posDetail": "読点",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "、",
+   "reading": "、"
+  },
+  {
+   "surface": "友達",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "友達",
+   "reading": "トモダチ"
+  },
+  {
+   "surface": "と",
+   "pos": "助詞",
+   "posDetail": "並立助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "と",
+   "reading": "ト"
+  },
+  {
+   "surface": "映画",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "映画",
+   "reading": "エイガ"
+  },
+  {
+   "surface": "を",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "を",
+   "reading": "ヲ"
+  },
+  {
+   "surface": "見",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "一段",
+   "conjugatedForm": "連用形",
+   "basicForm": "見る",
+   "reading": "ミ"
+  },
+  {
+   "surface": "まし",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・マス",
+   "conjugatedForm": "連用形",
+   "basicForm": "ます",
+   "reading": "マシ"
+  },
+  {
+   "surface": "た",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・タ",
+   "conjugatedForm": "基本形",
+   "basicForm": "た",
+   "reading": "タ"
+  }
+ ],
+ "このりんごはおいしいじゃないです": [
+  {
+   "surface": "この",
+   "pos": "連体詞",
+   "posDetail": "*",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "この",
+   "reading": "コノ"
+  },
+  {
+   "surface": "りんご",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "りんご",
+   "reading": "リンゴ"
+  },
+  {
+   "surface": "は",
+   "pos": "助詞",
+   "posDetail": "係助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "は",
+   "reading": "ハ"
+  },
+  {
+   "surface": "おいしい",
+   "pos": "形容詞",
+   "posDetail": "自立",
+   "conjugatedType": "形容詞・イ段",
+   "conjugatedForm": "基本形",
+   "basicForm": "おいしい",
+   "reading": "オイシイ"
+  },
+  {
+   "surface": "じゃ",
+   "pos": "助詞",
+   "posDetail": "副助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "じゃ",
+   "reading": "ジャ"
+  },
+  {
+   "surface": "ない",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・ナイ",
+   "conjugatedForm": "基本形",
+   "basicForm": "ない",
+   "reading": "ナイ"
+  },
+  {
+   "surface": "です",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・デス",
+   "conjugatedForm": "基本形",
+   "basicForm": "です",
+   "reading": "デス"
+  }
+ ],
+ "このりんごはおいしくないです": [
+  {
+   "surface": "この",
+   "pos": "連体詞",
+   "posDetail": "*",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "この",
+   "reading": "コノ"
+  },
+  {
+   "surface": "りんご",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "りんご",
+   "reading": "リンゴ"
+  },
+  {
+   "surface": "は",
+   "pos": "助詞",
+   "posDetail": "係助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "は",
+   "reading": "ハ"
+  },
+  {
+   "surface": "おいしく",
+   "pos": "形容詞",
+   "posDetail": "自立",
+   "conjugatedType": "形容詞・イ段",
+   "conjugatedForm": "連用テ接続",
+   "basicForm": "おいしい",
+   "reading": "オイシク"
+  },
+  {
+   "surface": "ない",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・ナイ",
+   "conjugatedForm": "基本形",
+   "basicForm": "ない",
+   "reading": "ナイ"
+  },
+  {
+   "surface": "です",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・デス",
+   "conjugatedForm": "基本形",
+   "basicForm": "です",
+   "reading": "デス"
+  }
+ ],
+ "この部屋はしずかじゃないです": [
+  {
+   "surface": "この",
+   "pos": "連体詞",
+   "posDetail": "*",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "この",
+   "reading": "コノ"
+  },
+  {
+   "surface": "部屋",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "部屋",
+   "reading": "ヘヤ"
+  },
+  {
+   "surface": "は",
+   "pos": "助詞",
+   "posDetail": "係助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "は",
+   "reading": "ハ"
+  },
+  {
+   "surface": "しずか",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "しずか",
+   "reading": "シズカ"
+  },
+  {
+   "surface": "じゃ",
+   "pos": "助詞",
+   "posDetail": "副助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "じゃ",
+   "reading": "ジャ"
+  },
+  {
+   "surface": "ない",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・ナイ",
+   "conjugatedForm": "基本形",
+   "basicForm": "ない",
+   "reading": "ナイ"
+  },
+  {
+   "surface": "です",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・デス",
+   "conjugatedForm": "基本形",
+   "basicForm": "です",
+   "reading": "デス"
+  }
+ ],
+ "私はが学生です": [
+  {
+   "surface": "私",
+   "pos": "名詞",
+   "posDetail": "代名詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "私",
+   "reading": "ワタシ"
+  },
+  {
+   "surface": "は",
+   "pos": "助詞",
+   "posDetail": "係助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "は",
+   "reading": "ハ"
+  },
+  {
+   "surface": "が",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "が",
+   "reading": "ガ"
+  },
+  {
+   "surface": "学生",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "学生",
+   "reading": "ガクセイ"
+  },
+  {
+   "surface": "です",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・デス",
+   "conjugatedForm": "基本形",
+   "basicForm": "です",
+   "reading": "デス"
+  }
+ ],
+ "本をに置きます": [
+  {
+   "surface": "本",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "本",
+   "reading": "ホン"
+  },
+  {
+   "surface": "を",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "を",
+   "reading": "ヲ"
+  },
+  {
+   "surface": "に",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "に",
+   "reading": "ニ"
+  },
+  {
+   "surface": "置き",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "五段・カ行イ音便",
+   "conjugatedForm": "連用形",
+   "basicForm": "置く",
+   "reading": "オキ"
+  },
+  {
+   "surface": "ます",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・マス",
+   "conjugatedForm": "基本形",
+   "basicForm": "ます",
+   "reading": "マス"
+  }
+ ],
+ "誰もが知っている": [
+  {
+   "surface": "誰",
+   "pos": "名詞",
+   "posDetail": "代名詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "誰",
+   "reading": "ダレ"
+  },
+  {
+   "surface": "も",
+   "pos": "助詞",
+   "posDetail": "係助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "も",
+   "reading": "モ"
+  },
+  {
+   "surface": "が",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "が",
+   "reading": "ガ"
+  },
+  {
+   "surface": "知っ",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "五段・ラ行",
+   "conjugatedForm": "連用タ接続",
+   "basicForm": "知る",
+   "reading": "シッ"
+  },
+  {
+   "surface": "て",
+   "pos": "助詞",
+   "posDetail": "接続助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "て",
+   "reading": "テ"
+  },
+  {
+   "surface": "いる",
+   "pos": "動詞",
+   "posDetail": "非自立",
+   "conjugatedType": "一段",
+   "conjugatedForm": "基本形",
+   "basicForm": "いる",
+   "reading": "イル"
+  }
+ ],
+ "私だけが行きます": [
+  {
+   "surface": "私",
+   "pos": "名詞",
+   "posDetail": "代名詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "私",
+   "reading": "ワタシ"
+  },
+  {
+   "surface": "だけ",
+   "pos": "助詞",
+   "posDetail": "副助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "だけ",
+   "reading": "ダケ"
+  },
+  {
+   "surface": "が",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "が",
+   "reading": "ガ"
+  },
+  {
+   "surface": "行き",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "五段・カ行促音便",
+   "conjugatedForm": "連用形",
+   "basicForm": "行く",
+   "reading": "イキ"
+  },
+  {
+   "surface": "ます",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・マス",
+   "conjugatedForm": "基本形",
+   "basicForm": "ます",
+   "reading": "マス"
+  }
+ ],
+ "本までが高い": [
+  {
+   "surface": "本",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "本",
+   "reading": "ホン"
+  },
+  {
+   "surface": "まで",
+   "pos": "助詞",
+   "posDetail": "副助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "まで",
+   "reading": "マデ"
+  },
+  {
+   "surface": "が",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "が",
+   "reading": "ガ"
+  },
+  {
+   "surface": "高い",
+   "pos": "形容詞",
+   "posDetail": "自立",
+   "conjugatedType": "形容詞・アウオ段",
+   "conjugatedForm": "基本形",
+   "basicForm": "高い",
+   "reading": "タカイ"
+  }
+ ],
+ "部屋には猫がいます": [
+  {
+   "surface": "部屋",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "部屋",
+   "reading": "ヘヤ"
+  },
+  {
+   "surface": "に",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "に",
+   "reading": "ニ"
+  },
+  {
+   "surface": "は",
+   "pos": "助詞",
+   "posDetail": "係助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "は",
+   "reading": "ハ"
+  },
+  {
+   "surface": "猫",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "猫",
+   "reading": "ネコ"
+  },
+  {
+   "surface": "が",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "が",
+   "reading": "ガ"
+  },
+  {
+   "surface": "い",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "一段",
+   "conjugatedForm": "連用形",
+   "basicForm": "いる",
+   "reading": "イ"
+  },
+  {
+   "surface": "ます",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・マス",
+   "conjugatedForm": "基本形",
+   "basicForm": "ます",
+   "reading": "マス"
+  }
+ ],
+ "駅から学校まで歩きます": [
+  {
+   "surface": "駅",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "駅",
+   "reading": "エキ"
+  },
+  {
+   "surface": "から",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "から",
+   "reading": "カラ"
+  },
+  {
+   "surface": "学校",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "学校",
+   "reading": "ガッコウ"
+  },
+  {
+   "surface": "まで",
+   "pos": "助詞",
+   "posDetail": "副助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "まで",
+   "reading": "マデ"
+  },
+  {
+   "surface": "歩き",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "五段・カ行イ音便",
+   "conjugatedForm": "連用形",
+   "basicForm": "歩く",
+   "reading": "アルキ"
+  },
+  {
+   "surface": "ます",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・マス",
+   "conjugatedForm": "基本形",
+   "basicForm": "ます",
+   "reading": "マス"
+  }
+ ],
+ "毎朝七時に学校で勉強します": [
+  {
+   "surface": "毎朝",
+   "pos": "名詞",
+   "posDetail": "副詞可能",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "毎朝",
+   "reading": "マイアサ"
+  },
+  {
+   "surface": "七",
+   "pos": "名詞",
+   "posDetail": "数",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "七",
+   "reading": "ナナ"
+  },
+  {
+   "surface": "時",
+   "pos": "名詞",
+   "posDetail": "接尾",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "時",
+   "reading": "ジ"
+  },
+  {
+   "surface": "に",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "に",
+   "reading": "ニ"
+  },
+  {
+   "surface": "学校",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "学校",
+   "reading": "ガッコウ"
+  },
+  {
+   "surface": "で",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "で",
+   "reading": "デ"
+  },
+  {
+   "surface": "勉強",
+   "pos": "名詞",
+   "posDetail": "サ変接続",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "勉強",
+   "reading": "ベンキョウ"
+  },
+  {
+   "surface": "し",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "サ変・スル",
+   "conjugatedForm": "連用形",
+   "basicForm": "する",
+   "reading": "シ"
+  },
+  {
+   "surface": "ます",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・マス",
+   "conjugatedForm": "基本形",
+   "basicForm": "ます",
+   "reading": "マス"
+  }
+ ],
+ "用事があります": [
+  {
+   "surface": "用事",
+   "pos": "名詞",
+   "posDetail": "一般",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "用事",
+   "reading": "ヨウジ"
+  },
+  {
+   "surface": "が",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "が",
+   "reading": "ガ"
+  },
+  {
+   "surface": "あり",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "五段・ラ行",
+   "conjugatedForm": "連用形",
+   "basicForm": "ある",
+   "reading": "アリ"
+  },
+  {
+   "surface": "ます",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・マス",
+   "conjugatedForm": "基本形",
+   "basicForm": "ます",
+   "reading": "マス"
+  }
+ ],
+ "時間がありません": [
+  {
+   "surface": "時間",
+   "pos": "名詞",
+   "posDetail": "副詞可能",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "時間",
+   "reading": "ジカン"
+  },
+  {
+   "surface": "が",
+   "pos": "助詞",
+   "posDetail": "格助詞",
+   "conjugatedType": "*",
+   "conjugatedForm": "*",
+   "basicForm": "が",
+   "reading": "ガ"
+  },
+  {
+   "surface": "あり",
+   "pos": "動詞",
+   "posDetail": "自立",
+   "conjugatedType": "五段・ラ行",
+   "conjugatedForm": "連用形",
+   "basicForm": "ある",
+   "reading": "アリ"
+  },
+  {
+   "surface": "ませ",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "特殊・マス",
+   "conjugatedForm": "未然形",
+   "basicForm": "ます",
+   "reading": "マセ"
+  },
+  {
+   "surface": "ん",
+   "pos": "助動詞",
+   "posDetail": "*",
+   "conjugatedType": "不変化型",
+   "conjugatedForm": "基本形",
+   "basicForm": "ん",
+   "reading": "ン"
+  }
+ ]
+}

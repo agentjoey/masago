@@ -28,6 +28,7 @@ import {
   zonedWallClockToInstant,
 } from './scheduler/index.js';
 import { createLogger, startHealthServer } from './observability/index.js';
+import { createAnalyzer, crossCheck } from './nlp/index.js';
 import {
   createCommandHandlers,
   createHandleUpdate,
@@ -116,6 +117,16 @@ const voice: OrchestratorVoiceDeps = {
   recordUsage: (input) => recordUsage(usageRecorder, input),
 };
 
+/**
+ * 形態素解析。辞書が 400MB あるので子プロセスに置き、使わない間は落とす
+ * （§8 / nlp/worker.ts）。常駐させると本体の 4 倍になり、Railway の
+ * 月 $5 枠をほぼ使い切る。
+ */
+const analyzer = createAnalyzer({ logger });
+onShutdown(() => {
+  analyzer.shutdown();
+});
+
 const orchestratorDeps = {
   config,
   executor: db,
@@ -125,6 +136,24 @@ const orchestratorDeps = {
   voice,
   // 水準は課程の進み具合から出す。プロフィールの文字列ではなく、
   // 実際に習った仮名の数で決める——読めない人に日本語で返さないため。
+  grammarCheck: async (
+    text: string,
+    alreadyDetected: readonly { knowledgeKey: string; original: string }[],
+  ) => {
+    const result = await crossCheck(text, {
+      analyzer,
+      alreadyDetected,
+      onError: (error) => {
+        logger.warn('grammar cross-check unavailable', { error });
+      },
+    });
+    return result.added.map((issue) => ({
+      knowledgeKey: issue.knowledgeKey,
+      original: issue.original,
+      recommended: issue.recommended,
+      explanation: issue.explanation,
+    }));
+  },
   resolveLevel: async (learnerId: string) => {
     const keys = await reviewQueueRepo.listIntroducedKeys(db, learnerId, 'KANA');
     const count = keys.filter((key) => kanaOfKey(key) !== undefined).length;

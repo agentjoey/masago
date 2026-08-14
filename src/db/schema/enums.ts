@@ -91,3 +91,6 @@ export const jobStatus = pgEnum('job_status', [
   'DONE',
   'FAILED',
 ]);
+
+/** 誤りを見つけたのが模型か、規則か（§8）。 */
+export const issueSource = pgEnum('issue_source', ['LLM', 'RULE']);

@@ -20,7 +20,7 @@ import {
   type HintLevel,
   type LearnerLevel,
 } from './modes.js';
-import { runTextTurn } from './textTurn.js';
+import { runTextTurn, type TextTurnDeps } from './textTurn.js';
 import {
   createDrizzleTurnStore,
   TurnStepFailedError,
@@ -63,6 +63,8 @@ export interface OrchestratorDeps {
    * 済ませるため。何を根拠に水準を決めるかは learning 側の判断。
    */
   resolveLevel?: (learnerId: string) => Promise<LearnerLevel | undefined>;
+  /** 形態素解析による裏取り（§8）。無ければ模型の判定だけを使う。 */
+  grammarCheck?: TextTurnDeps['grammarCheck'];
 }
 
 interface IncomingMessageBase {
@@ -306,6 +308,9 @@ export async function handleIncomingMessage(
       ...(deps.tutor !== undefined ? { tutor: deps.tutor } : {}),
       ...(deps.corrections !== undefined
         ? { corrections: deps.corrections }
+        : {}),
+      ...(deps.grammarCheck !== undefined
+        ? { grammarCheck: deps.grammarCheck }
         : {}),
     },
     {

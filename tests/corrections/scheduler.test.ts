@@ -32,6 +32,7 @@ function makeIssue(overrides: Partial<PendingIssue> = {}): PendingIssue {
     importance: 'MEDIUM',
     surfacedAt: null,
     retryStatus: 'NONE',
+  source: 'LLM' as const,
     createdAt: new Date(Date.UTC(2026, 7, 1, 0, 0, seq)),
     ...overrides,
   };

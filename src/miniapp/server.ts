@@ -21,8 +21,12 @@ export interface MiniAppHandlers {
   kana(telegramUserId: number): Promise<unknown>;
   /** 「これをもう一度」。期日を今にする。 */
   practice(telegramUserId: number, knowledgeKey: string): Promise<unknown>;
-  /** 読解の一問。ruby の段を受け取る。 */
-  reading(telegramUserId: number, level: string): Promise<unknown>;
+  /** 読解の一問。ruby の段と場面を受け取る。 */
+  reading(
+    telegramUserId: number,
+    level: string,
+    sceneId: string | undefined,
+  ): Promise<unknown>;
   /** 読解の採点。正解を前端に渡さないため後端で判定する。 */
   readingAnswer(
     telegramUserId: number,
@@ -184,6 +188,9 @@ const API_ROUTES: Record<
     handlers.reading(
       userId,
       typeof body['level'] === 'string' ? body['level'] : 'ALL',
+      typeof body['scene'] === 'string' && body['scene'] !== ''
+        ? body['scene']
+        : undefined,
     ),
   '/api/reading/answer': (handlers, userId, body) =>
     handlers.readingAnswer(

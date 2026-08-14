@@ -53,8 +53,8 @@ async function start(handlers?: Partial<Record<string, () => Promise<unknown>>>)
         calls.push(`practice:${key}`);
         return { ok: true };
       },
-      reading: async (_userId, level) => {
-        calls.push(`reading:${level}`);
+      reading: async (_userId, level, scene) => {
+        calls.push(`reading:${level}:${scene ?? '-'}`);
         return { ok: true };
       },
       readingAnswer: async (_userId, target, chosen) => {

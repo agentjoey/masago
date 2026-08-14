@@ -450,7 +450,7 @@ const healthServer = startMiniAppServer({
       const ok = await markDueNow(db, learnerId, key, new Date());
       return { ok };
     },
-    reading: async (telegramUserId, level) => {
+    reading: async (telegramUserId, level, sceneId) => {
       const learnerId = await findLearnerId(db, telegramUserId);
       if (learnerId === undefined) return null;
       return loadReading(db, learnerId, {
@@ -460,6 +460,7 @@ const healthServer = startMiniAppServer({
           level === 'UNKNOWN' || level === 'NONE' || level === 'ALL'
             ? level
             : 'ALL',
+        ...(sceneId === undefined ? {} : { sceneId }),
       });
     },
     readingAnswer: (_telegramUserId, targetId, chosenId) =>

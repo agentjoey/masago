@@ -2,6 +2,7 @@ import { toRubySegments, type RubySegment } from '../curriculum/furigana.js';
 import type { Random } from '../curriculum/quiz.js';
 import type { Sentence } from '../curriculum/sentences.js';
 import type { Executor } from '../db/repositories/executor.js';
+import { SCENES } from '../curriculum/scenes.js';
 import {
   buildReadingQuestion,
   gradeReading,
@@ -47,6 +48,9 @@ export interface ReadingPayload {
   readonly level: RubyLevel;
   /** 未習の語がいくつ混ざっているか。 */
   readonly unknown: number;
+  /** 選べる場面の一覧。前端が並べる。 */
+  readonly scenes: readonly { id: string; name: string }[];
+  readonly sceneId: string | null;
 }
 
 export function readingSegments(
@@ -76,6 +80,8 @@ export interface LoadReadingOptions {
   readonly optionCount: number;
   readonly random: Random;
   readonly level: RubyLevel;
+  /** 場面で絞る。未指定なら全部から。 */
+  readonly sceneId?: string;
 }
 
 export async function loadReading(
@@ -90,6 +96,7 @@ export async function loadReading(
     // Mini App では常に日本語を読ませる。意味から日本語を選ぶ向きは
     // 読む練習ではないので、こちらには置かない。
     kind: 'JA_TO_ZH',
+    ...(options.sceneId === undefined ? {} : { sceneId: options.sceneId }),
   });
   if (next === undefined) return null;
 
@@ -102,6 +109,8 @@ export async function loadReading(
     })),
     level: options.level,
     unknown: next.unknown,
+    scenes: SCENES.map((scene) => ({ id: scene.id, name: scene.name })),
+    sceneId: options.sceneId ?? null,
   };
 }
 

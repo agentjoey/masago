@@ -123,6 +123,12 @@ rt { font-size: .5em; color: var(--muted); }
   border: 1px solid var(--line); background: var(--card); color: var(--muted); cursor: pointer;
 }
 .levels button[aria-selected="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+.scenes { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 10px; }
+.scenes button {
+  font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid var(--line); background: var(--card); color: var(--muted); cursor: pointer;
+}
+.scenes button[aria-selected="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -282,6 +288,7 @@ function calendarView(days) {
 
 /* ---------- 阅读 ---------- */
 let rubyLevel = 'ALL';
+let sceneId = '';
 let reading = null;
 
 function rubyHtml(segments) {
@@ -296,9 +303,13 @@ function readingView(d) {
   const levels = [['ALL', '全部注音'], ['UNKNOWN', '只标生词'], ['NONE', '不注音']]
     .map(([v, label]) => '<button data-level="' + v + '" aria-selected="' +
       (v === d.level) + '">' + label + '</button>').join('');
+  const scenes = [{ id: '', name: '全部' }].concat(d.scenes)
+    .map((sc) => '<button data-scene="' + esc(sc.id) + '" aria-selected="' +
+      (sc.id === (d.sceneId || '')) + '">' + esc(sc.name) + '</button>').join('');
   const choices = d.options.map((o) =>
     '<button class="choice" data-id="' + esc(o.id) + '">' + esc(o.label) + '</button>').join('');
-  return '<div class="levels">' + levels + '</div>' +
+  return '<div class="scenes">' + scenes + '</div>' +
+    '<div class="levels">' + levels + '</div>' +
     '<div class="card"><div class="sent">' + rubyHtml(d.segments) + '</div></div>' +
     '<div class="muted" style="margin:0 0 8px">这句话是什么意思？</div>' +
     '<div class="choices">' + choices + '</div>' +
@@ -344,7 +355,8 @@ async function show(tab) {
   view.innerHTML = '<div class="empty">加载中…</div>';
   try {
     const [path, render] = tabs[tab];
-    view.innerHTML = render(await api(path, tab === 'reading' ? { level: rubyLevel } : undefined));
+    view.innerHTML = render(await api(path,
+      tab === 'reading' ? { level: rubyLevel, scene: sceneId } : undefined));
   } catch (err) {
     view.innerHTML = '<div class="empty">读取失败：' + esc(err.message || err) + '</div>';
   }
@@ -355,6 +367,8 @@ view.addEventListener('click', (e) => {
   if (cell !== null) { openKana(cell.dataset.id); return; }
   const level = e.target.closest('.levels button[data-level]');
   if (level !== null) { rubyLevel = level.dataset.level; show('reading'); return; }
+  const scene = e.target.closest('.scenes button[data-scene]');
+  if (scene !== null) { sceneId = scene.dataset.scene; show('reading'); return; }
   const choice = e.target.closest('.choice[data-id]');
   if (choice !== null && !choice.disabled) answerReading(choice.dataset.id);
 });

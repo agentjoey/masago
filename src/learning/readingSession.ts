@@ -10,6 +10,7 @@ import {
   TRANSLATED,
   type Sentence,
 } from '../curriculum/sentences.js';
+import { SCENE_BY_ID, sceneSentences } from '../curriculum/scenes.js';
 import type { Executor } from '../db/repositories/executor.js';
 import * as reviewQueue from '../db/repositories/reviewQueue.js';
 import { vocabOfKey } from '../curriculum/vocab.js';
@@ -88,6 +89,8 @@ export interface ReadingOptions {
   readonly optionCount: number;
   readonly random: Random;
   readonly kind?: SentenceQuestionKind;
+  /** 場面で絞る（`curriculum/scenes.ts`）。未指定なら全部から。 */
+  readonly sceneId?: string;
 }
 
 export async function nextReadingQuestion(
@@ -104,12 +107,19 @@ export function buildReadingQuestion(
   known: ReadonlySet<string>,
   options: ReadingOptions,
 ): ReadingQuestion | undefined {
-  const readable = TRANSLATED.filter(
+  const scene =
+    options.sceneId === undefined ? undefined : SCENE_BY_ID.get(options.sceneId);
+  // 場面を選んだら訳のある文だけに絞る。訳が無いと意味を問えない。
+  const source =
+    scene === undefined
+      ? TRANSLATED
+      : sceneSentences(scene).filter((sentence) => sentence.zh !== undefined);
+  const readable = source.filter(
     (sentence) => unknownCount(sentence, known) <= MAX_UNKNOWN_WORDS,
   );
   // 読める文が無いうちは、いちばん易しい文から出す。何も出さないより
   // 「まだ難しい」と分かるほうがよい。
-  const pool = readable.length >= 8 ? readable : TRANSLATED;
+  const pool = readable.length >= 8 ? readable : source;
   if (pool.length < 4) return undefined;
 
   const index = Math.min(

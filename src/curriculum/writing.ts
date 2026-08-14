@@ -7,7 +7,7 @@
  * 素材は `sentences.ts`（人が書いた文を条件で絞ったもの）。
  * ここでは文を作らない。
  */
-import type { Sentence, StoredToken } from './sentences.js';
+import { AMBIGUOUS_BLANKS, type Sentence, type StoredToken } from './sentences.js';
 import {
   isBlankableParticle,
   PARTICLE_BY_SURFACE,
@@ -171,9 +171,13 @@ function blankCandidates(
   sentence: Sentence,
   particleId?: string,
 ): BlankCandidate[] {
+  // 別の助詞でも通ってしまう位置は問わない。片方だけを正解にすると、
+  // 正しく書いた学習者に ❌ を出すことになる（sentences.ts の註）。
+  const ambiguous = AMBIGUOUS_BLANKS.get(sentence.id);
   return sentence.tokens
     .map((token, index) => ({ token, index }))
     .filter(({ token, index }) => {
+      if (ambiguous?.includes(index) === true) return false;
       if (!isBlankableParticle(token)) return false;
       if (
         particleId !== undefined &&

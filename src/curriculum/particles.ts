@@ -30,7 +30,7 @@ export interface Particle {
   readonly reading: string;
   /** 中文の一行説明。手書き（出典無し）。 */
   readonly label: string;
-  /** 例文プールで穴埋めとして問える箇所の数（実測、`pnpm check:particles`）。 */
+  /** 例文プールで穴埋めとして問える箇所の数（実測。`tests/curriculum/particles.test.ts` が突き合わせる）。 */
   readonly blankable: number;
 }
 
@@ -42,18 +42,18 @@ export interface Particle {
  * 出す問題が無いという状態になるので、載せない。
  */
 export const PARTICLES: readonly Particle[] = [
-  { id: 'wa', surface: 'は', reading: 'wa', label: '主题：说的是关于它的事', blankable: 1153 },
-  { id: 'ga', surface: 'が', reading: 'ga', label: '主语：动作或状态的主体', blankable: 519 },
-  { id: 'wo', surface: 'を', reading: 'o', label: '宾语：动作作用的对象', blankable: 487 },
-  { id: 'ni', surface: 'に', reading: 'ni', label: '时间点、到达点、动作的对象', blankable: 461 },
-  { id: 'no', surface: 'の', reading: 'no', label: '连接两个名词：的', blankable: 332 },
-  { id: 'de', surface: 'で', reading: 'de', label: '动作发生的场所、使用的手段', blankable: 132 },
-  { id: 'he', surface: 'へ', reading: 'e', label: '方向：朝着某处', blankable: 54 },
-  { id: 'kara', surface: 'から', reading: 'kara', label: '起点：从……开始', blankable: 50 },
-  { id: 'mo', surface: 'も', reading: 'mo', label: '也：和前面提到的一样', blankable: 40 },
-  { id: 'yori', surface: 'より', reading: 'yori', label: '比较的基准：比……', blankable: 33 },
-  { id: 'made', surface: 'まで', reading: 'made', label: '终点：到……为止', blankable: 30 },
-  { id: 'to', surface: 'と', reading: 'to', label: '和：并列，或一起做的对象', blankable: 23 },
+  { id: 'wa', surface: 'は', reading: 'wa', label: '主题：说的是关于它的事', blankable: 1950 },
+  { id: 'ga', surface: 'が', reading: 'ga', label: '主语：动作或状态的主体', blankable: 843 },
+  { id: 'wo', surface: 'を', reading: 'o', label: '宾语：动作作用的对象', blankable: 846 },
+  { id: 'ni', surface: 'に', reading: 'ni', label: '时间点、到达点、动作的对象', blankable: 792 },
+  { id: 'no', surface: 'の', reading: 'no', label: '连接两个名词：的', blankable: 559 },
+  { id: 'de', surface: 'で', reading: 'de', label: '动作发生的场所、使用的手段', blankable: 210 },
+  { id: 'he', surface: 'へ', reading: 'e', label: '方向：朝着某处', blankable: 79 },
+  { id: 'kara', surface: 'から', reading: 'kara', label: '起点：从……开始', blankable: 72 },
+  { id: 'mo', surface: 'も', reading: 'mo', label: '也：和前面提到的一样', blankable: 55 },
+  { id: 'yori', surface: 'より', reading: 'yori', label: '比较的基准：比……', blankable: 50 },
+  { id: 'made', surface: 'まで', reading: 'made', label: '终点：到……为止', blankable: 50 },
+  { id: 'to', surface: 'と', reading: 'to', label: '和：并列，或一起做的对象', blankable: 38 },
 ];
 
 export const PARTICLE_BY_ID: ReadonlyMap<string, Particle> = new Map(

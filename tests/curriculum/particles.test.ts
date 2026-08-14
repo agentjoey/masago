@@ -5,7 +5,12 @@ import {
   particleKey,
   particleOfKey,
 } from '../../src/curriculum/particles.js';
-import { SENTENCES } from '../../src/curriculum/sentences.js';
+import {
+  AMBIGUOUS_BLANKS,
+  SENTENCES,
+  SENTENCES_BY_ID,
+  TRANSLATED,
+} from '../../src/curriculum/sentences.js';
 import {
   buildParticleBlank,
   usableForParticle,
@@ -134,5 +139,63 @@ describe('選択肢', () => {
       });
       expect(blank?.particleId, particle.surface).toBe(particle.id);
     }
+  });
+});
+
+describe('助詞が入れ替え可能な位置', () => {
+  /**
+   * 「日曜日は何をしますか」と「日曜日に何をしますか」はどちらも実在する。
+   * 片方だけを正解にすると、正しく書いた学習者に ❌ を出すことになる。
+   */
+  it('never asks about a position where another particle also works', () => {
+    for (const [sentenceId, indices] of AMBIGUOUS_BLANKS) {
+      const sentence = SENTENCES_BY_ID.get(sentenceId);
+      if (sentence === undefined) continue;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const blank = buildParticleBlank(sentence, {
+          optionCount: 4,
+          random: seeded(attempt * 7 + 1),
+        });
+        if (blank === undefined) continue;
+        // 空欄になったトークンの位置が除外リストに載っていないこと
+        const at = [...blank.prompt].findIndex((char) => char === '＿');
+        let offset = 0;
+        for (const [index, token] of sentence.tokens.entries()) {
+          if (offset === at) {
+            expect(indices, `${sentence.text} @${String(index)}`).not.toContain(
+              index,
+            );
+            break;
+          }
+          offset += token.s.length;
+        }
+      }
+    }
+  });
+
+  it('keeps the exclusion list small enough to be worth it', () => {
+    const excluded = [...AMBIGUOUS_BLANKS.values()].reduce(
+      (sum, list) => sum + list.length,
+      0,
+    );
+    // 全部で 6000 箇所強のうち数十。ここが跳ね上がったら判定が壊れている。
+    expect(excluded).toBeGreaterThan(0);
+    expect(excluded).toBeLessThan(300);
+  });
+});
+
+describe('例文プール', () => {
+  it('carries human-written Chinese translations', () => {
+    expect(TRANSLATED.length).toBeGreaterThan(1000);
+    for (const sentence of TRANSLATED.slice(0, 200)) {
+      expect(sentence.zh).toBeDefined();
+      expect(sentence.zh?.trim()).not.toBe('');
+      // 訳が日本語のままではないこと（仮名が混ざっていたら取り違え）
+      expect(sentence.zh ?? '').not.toMatch(/[ぁ-んァ-ン]/u);
+    }
+  });
+
+  it('has more material than before the rebuild', () => {
+    expect(SENTENCES.length).toBeGreaterThan(3000);
   });
 });

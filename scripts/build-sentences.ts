@@ -26,6 +26,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createAnalyzer, detectGrammarIssues, type Token } from '../src/nlp/index.js';
 import { VOCAB } from '../src/curriculum/vocab.js';
+import {
+  isBlankableParticle,
+  PARTICLE_SURFACES,
+} from '../src/curriculum/particles.js';
 
 const CACHE_DIR = join(process.cwd(), '.cache', 'tatoeba');
 const OUT_PATH = join(process.cwd(), 'src', 'curriculum', 'sentences.ts');
@@ -34,13 +38,26 @@ const SOURCES = {
   sentences:
     'https://downloads.tatoeba.org/exports/per_language/jpn/jpn_sentences.tsv.bz2',
   tags: 'https://downloads.tatoeba.org/exports/tags.tar.bz2',
+  chinese:
+    'https://downloads.tatoeba.org/exports/per_language/cmn/cmn_sentences.tsv.bz2',
+  links: 'https://downloads.tatoeba.org/exports/links.tar.bz2',
 };
 
 /** 一文あたりの内容語の上限。長い文は語順の練習に向かない。 */
 const MAX_CONTENT_WORDS = 9;
 const MIN_CONTENT_WORDS = 2;
 /** 出力する上限。多すぎるとファイルが読めなくなる。 */
-const MAX_OUTPUT = 2000;
+const MAX_OUTPUT = 3500;
+
+/**
+ * 繁体字にしか無い字（高頻度のものだけ）。
+ *
+ * 訳が複数あるときに簡体字のほうを選ぶための目安で、字種の判定器ではない。
+ * 繁体字しか無ければそれを使う——読みにくいのと、意味が分からないのとでは
+ * 後者のほうが困る。
+ */
+const TRADITIONAL_ONLY =
+  /[買賣說個們來這對還會學國東氣長點種樣現實體開關聞語頭馬鳥龍魚車門風飛時間問題經過發現數樂視聽讀寫書愛親歸鄉黃綠紅藍銀鐵錢價億萬歲點燈熱冷靜運動輪轉遠邊進連遲選適達違鄰陽階際隨險雞離難雲電需靜韓題顏願風飄飯飲養館馬駅騎驗體髮鬥鳥鳴鹽麗麵黃齒]/u;
 
 /** 既習の範囲外の活用形。これを使う文は N5 では読めない。 */
 const HARD_FORMS = ['仮定形', '命令', '未然ウ接続', '体言接続', '未然形'];
@@ -87,6 +104,52 @@ interface Candidate {
   text: string;
   level: 'N5' | 'N4';
   tokens: StoredToken[];
+  /** 人が書いた中国語訳（Tatoeba の対訳）。無い文のほうが多い。 */
+  zh?: string;
+}
+
+/**
+ * 日本語文 id → 中国語訳。
+ *
+ * **模型に訳させない**（§8）。ここで拾えなかった文の意味は、その場で
+ * tutor が説明する——訳文そのものを作り置きするのとは別の話で、
+ * 教材として残るのは人が書いた訳だけにしておく。
+ */
+async function loadTranslations(): Promise<Map<string, string>> {
+  const cmn = new Map<string, string>();
+  for (const line of (
+    await readFile(join(CACHE_DIR, 'cmn_sentences.tsv'), 'utf8')
+  ).split('\n')) {
+    const parts = line.split('\t');
+    if (parts.length >= 3 && parts[0] !== undefined && parts[2] !== undefined) {
+      cmn.set(parts[0], parts[2]);
+    }
+  }
+
+  // links は双方向に張られている。日本語側だけを拾う。
+  const candidates = new Map<string, string[]>();
+  for (const line of (
+    await readFile(join(CACHE_DIR, 'links.csv'), 'utf8')
+  ).split('\n')) {
+    const parts = line.split('\t');
+    const from = parts[0];
+    const to = parts[1];
+    if (from === undefined || to === undefined) continue;
+    const translation = cmn.get(to);
+    if (translation === undefined) continue;
+    const list = candidates.get(from) ?? [];
+    list.push(translation);
+    candidates.set(from, list);
+  }
+
+  const chosen = new Map<string, string>();
+  for (const [id, list] of candidates) {
+    // 簡体字の訳があればそちらを採る。
+    const simplified = list.find((text) => !TRADITIONAL_ONLY.test(text));
+    const pick = simplified ?? list[0];
+    if (pick !== undefined) chosen.set(id, pick);
+  }
+  return chosen;
 }
 
 function quote(value: string): string {
@@ -103,6 +166,8 @@ async function main(): Promise<void> {
 
   const sentencesBz2 = await ensureFile(SOURCES.sentences, 'jpn_sentences.tsv.bz2');
   const tagsBz2 = await ensureFile(SOURCES.tags, 'tags.tar.bz2');
+  const chineseBz2 = await ensureFile(SOURCES.chinese, 'cmn_sentences.tsv.bz2');
+  const linksBz2 = await ensureFile(SOURCES.links, 'links.tar.bz2');
 
   // bunzip2 / tar は環境に任せる。Node に持ち込むと依存が増える。
   const { execFile } = await import('node:child_process');
@@ -113,6 +178,15 @@ async function main(): Promise<void> {
   }
   if (!existsSync(join(CACHE_DIR, 'tags.csv'))) {
     await run('tar', ['xjf', tagsBz2, '-C', CACHE_DIR]);
+  }
+  if (!existsSync(join(CACHE_DIR, 'cmn_sentences.tsv'))) {
+    await run('bunzip2', ['-kf', chineseBz2]);
+  }
+  if (!existsSync(join(CACHE_DIR, 'links.csv'))) {
+    // 300MB 近い。展開に少し時間がかかる。
+    await run('tar', ['xjf', linksBz2, '-C', CACHE_DIR], {
+      maxBuffer: 64 * 1024 * 1024,
+    });
   }
 
   const text = new Map<string, string>();
@@ -137,6 +211,9 @@ async function main(): Promise<void> {
     }
   }
   console.log(`  品質タグ付き ${String(trusted.size)} 件`);
+
+  const translations = await loadTranslations();
+  console.log(`  中国語訳あり ${String(translations.size)} 件`);
 
   const { n5, all } = knownSets();
   const analyzer = createAnalyzer({
@@ -205,21 +282,34 @@ async function main(): Promise<void> {
       continue;
     }
 
+    const zh = translations.get(id);
     kept.push({
       id,
       text: sentence,
       level: inN5 ? 'N5' : 'N4',
       tokens: tokens.map((token) => store(token)),
+      ...(zh === undefined ? {} : { zh }),
     });
     stats.kept += 1;
   }
 
   analyzer.shutdown();
 
-  // N5 を優先して残す。初級者に要るのは易しい文で、
-  // 先着順だと数の多い N4 で埋まってしまう。
-  kept.sort((a, b) => (a.level === b.level ? 0 : a.level === 'N5' ? -1 : 1));
+  /**
+   * 残す順。訳のある文を先に取る。
+   *
+   * 上限で切るので、並べ方がそのまま「何が使えるか」を決める。前は N5 か
+   * どうかだけで並べていて、訳のある文が上限の外へ押し出されていた
+   * ——プール 2000 件のうち訳が付いていたのは 246 件だけで、読解も
+   * 選択式応答も材料不足で作れなかった。訳の有無は自前では作れない
+   * （模型に訳させない・§8）ので、こちらを優先する。
+   */
+  const rank = (entry: Candidate): number =>
+    (entry.zh === undefined ? 2 : 0) + (entry.level === 'N5' ? 0 : 1);
+  kept.sort((a, b) => rank(a) - rank(b));
   const selected = kept.slice(0, MAX_OUTPUT);
+  // 出力は教える順（N5 が先）に戻す。
+  selected.sort((a, b) => (a.level === b.level ? 0 : a.level === 'N5' ? -1 : 1));
 
   console.log('\n  絞り込み');
   console.log(`    見た文            ${String(stats.seen)}`);
@@ -233,13 +323,89 @@ async function main(): Promise<void> {
   console.log(`      うち N5 ${String(n5Total)} / N4 ${String(kept.length - n5Total)}`);
   const n5Count = selected.filter((entry) => entry.level === 'N5').length;
   console.log(`    書き出し ${String(selected.length)} 件（N5 ${String(n5Count)} / N4 ${String(selected.length - n5Count)}）`);
+  const translated = selected.filter((entry) => entry.zh !== undefined).length;
+  console.log(`      うち中国語訳あり ${String(translated)}`);
 
-  const body = selected
-    .map(
-      (entry) =>
-        `  { id: ${quote(entry.id)}, level: ${quote(entry.level)}, text: ${quote(entry.text)}, tokens: [${entry.tokens.map(tokenLiteral).join(',')}] },`,
-    )
-    .join('\n');
+  /**
+   * 助詞を差し替えても実在の文になってしまう位置を洗い出す。
+   *
+   * 穴埋めは「元の文と違えば誤り」で採点するが、日本語の助詞には
+   * 入れ替えても通る場所がある——「日曜日は何をしますか」と
+   * 「日曜日に何をしますか」はどちらも実在の文で、どちらを選んでも
+   * 正しい。片方だけを正解にすると、正しく書いた学習者に ❌ を出す
+   * ことになる（§15 の裏返し）。
+   *
+   * 判定はコーパスに実在するかどうかだけで行う。**実在すれば通ることの
+   * 証明になるが、実在しなくても通らない証明にはならない**——だから
+   * これは曖昧な位置を全部見つける仕掛けではなく、見つかった分だけ
+   * 確実に減らす仕掛け。外す方向に間違えても材料が減るだけで、
+   * 誤ったことは教えない。
+   *
+   * 実測 5584 箇所中 40 箇所（0.7%）。
+   */
+  const attested = new Set<string>();
+  for (const sentence of text.values()) {
+    attested.add(stripTail(sentence));
+  }
+  const ambiguous = new Map<string, number[]>();
+  let checked = 0;
+  for (const entry of selected) {
+    let offset = 0;
+    entry.tokens.forEach((token, index) => {
+      const start = offset;
+      offset += token.s.length;
+      if (!isBlankableParticle(token)) return;
+      const previous = entry.tokens[index - 1];
+      if (previous === undefined || previous.p !== '名詞') return;
+      checked += 1;
+      const head = entry.text.slice(0, start);
+      const tail = entry.text.slice(start + token.s.length);
+      const alternative = PARTICLE_SURFACES.some(
+        (particle) =>
+          particle !== token.s && attested.has(stripTail(head + particle + tail)),
+      );
+      if (!alternative) return;
+      const list = ambiguous.get(entry.id) ?? [];
+      list.push(index);
+      ambiguous.set(entry.id, list);
+    });
+  }
+  const ambiguousCount = [...ambiguous.values()].reduce(
+    (sum, list) => sum + list.length,
+    0,
+  );
+  console.log(
+    `\n  助詞の空欄候補 ${String(checked)} 箇所、うち別の助詞でも通る ${String(ambiguousCount)} 箇所を除外`,
+  );
+
+  const line = (entry: Candidate): string => {
+    const zh = entry.zh === undefined ? '' : `, zh: ${quote(entry.zh)}`;
+    return `  { id: ${quote(entry.id)}, level: ${quote(entry.level)}, text: ${quote(entry.text)}${zh}, tokens: [${entry.tokens.map(tokenLiteral).join(',')}] },`;
+  };
+
+  /**
+   * 一つの配列リテラルに全部入れない。
+   *
+   * TypeScript は配列リテラルの型を要素から組み立てるので、この規模
+   * （一件が入れ子の配列を持つ）だと 2000 件を超えたあたりで
+   * 「union type that is too complex」で落ちる。注釈付きの塊に分けて
+   * 展開すれば、リテラル推論そのものが起きない。
+   */
+  const CHUNK_SIZE = 1000;
+  const chunks: string[] = [];
+  for (let start = 0; start < selected.length; start += CHUNK_SIZE) {
+    const part = selected.slice(start, start + CHUNK_SIZE);
+    chunks.push(
+      `const PART_${String(chunks.length)}: readonly Sentence[] = [\n${part.map(line).join('\n')}\n];`,
+    );
+  }
+  const body = [
+    chunks.join('\n\n'),
+    '',
+    `export const SENTENCES: readonly Sentence[] = [${chunks
+      .map((_, index) => `...PART_${String(index)}`)
+      .join(', ')}];`,
+  ].join('\n');
 
   const file = `/**
  * 例文プール（docs/scenario-learning.md）。**自動生成。手で編集しない。**
@@ -273,20 +439,51 @@ export interface Sentence {
   readonly id: string;
   readonly level: 'N5' | 'N4';
   readonly text: string;
+  /**
+   * 人が書いた中国語訳。付いている文のほうが少ない。
+   *
+   * **模型の訳は入れない**（§8）。訳が無い文の意味は、その場で tutor が
+   * 説明する——説明は模型でよいが、教材として残す訳文は人のものだけにする。
+   */
+  readonly zh?: string;
   readonly tokens: readonly StoredToken[];
 }
 
-export const SENTENCES: readonly Sentence[] = [
 ${body}
-];
 
 export const SENTENCES_BY_ID: ReadonlyMap<string, Sentence> = new Map(
   SENTENCES.map((entry) => [entry.id, entry]),
 );
+
+/** 中国語訳が付いている文だけ。読解と選択式応答の材料になる。 */
+export const TRANSLATED: readonly Sentence[] = SENTENCES.filter(
+  (entry) => entry.zh !== undefined,
+);
+
+/**
+ * 助詞を差し替えても実在の文になる位置（文 id → トークンの位置）。
+ *
+ * ここを空欄にすると、別の助詞を選んだ学習者に ❌ を出してしまうが、
+ * その助詞でも日本語として通る。出題から外す。
+ *
+ * 判定はコーパスに実在するかどうかだけ。実在すれば通る証明になるが、
+ * 実在しないことは通らない証明にならない——**曖昧な位置を全部
+ * 見つける表ではなく、確実に曖昧だと分かった分だけの表**。
+ */
+export const AMBIGUOUS_BLANKS: ReadonlyMap<string, readonly number[]> = new Map([
+${[...ambiguous.entries()]
+  .map(([id, list]) => `  [${quote(id)}, [${list.join(', ')}]],`)
+  .join('\n')}
+]);
 `;
 
   await writeFile(OUT_PATH, file, 'utf8');
   console.log(`\n  書き出し: ${OUT_PATH}`);
+}
+
+/** 文末の句読点を落とす。実在判定で「。」の有無だけの違いを潰すため。 */
+function stripTail(text: string): string {
+  return text.replace(/[。．.！!？?\s]+$/u, '');
 }
 
 function store(token: Token): StoredToken {

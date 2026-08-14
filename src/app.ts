@@ -293,6 +293,18 @@ async function runStartupChecks(): Promise<{ dbRoundTripMs: number }> {
   for (const warning of keyFormatWarnings()) {
     logger.warn('provider key format looks unusual', { warning });
   }
+  // MCP の transport は Web Crypto の global を使う。Node 19 より前には
+  // 無い——**本番が Node 18 で走っていて、最初の MCP 要求で初めて
+  // 「crypto is not defined」で落ちた**（2026-08-14 実測）。
+  // package.json の engines で版を固定したうえで、起動時にも確かめる：
+  // 最初の利用者の要求で気づくより、立ち上がらないほうがまだ良い。
+  if (config.mcp.accessToken !== undefined && typeof globalThis.crypto !== 'object') {
+    throw new Error(
+      `startup check failed: MCP needs global Web Crypto, missing on ${process.version}. ` +
+        'Node 19+ required (package.json engines pins 22.x).',
+    );
+  }
+  logger.info('runtime', { node: process.version });
   return { dbRoundTripMs };
 }
 

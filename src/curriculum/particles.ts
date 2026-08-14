@@ -101,3 +101,21 @@ export function isBlankableParticle(token: StoredToken): boolean {
   if (token.d === '係助詞' && token.s !== 'は' && token.s !== 'も') return false;
   return PARTICLE_BY_SURFACE.has(token.s);
 }
+
+/**
+ * 助詞の進み具合。
+ *
+ * 分母をここに置くのは、呼び出し側が `PARTICLES.length` を直接読まないため。
+ * 語彙で同じことをして二度ずれた——接尾辞を教える対象から外したのに、
+ * 片方が総数のまま残って 1374 と 1301 が並んだ。将来ここに「まだ教えない
+ * 助詞」を足すことになっても、分母は一箇所だけ直せば済む。
+ */
+export function particleProgress(introducedIds: ReadonlySet<string>): {
+  introduced: number;
+  total: number;
+} {
+  return {
+    introduced: PARTICLES.filter((entry) => introducedIds.has(entry.id)).length,
+    total: PARTICLES.length,
+  };
+}

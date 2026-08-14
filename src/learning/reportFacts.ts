@@ -1,6 +1,6 @@
-import { KANA } from '../curriculum/kana.js';
 import { kanaOfKey } from '../curriculum/kana.js';
-import { PARTICLES, particleOfKey } from '../curriculum/particles.js';
+import { kanaProgress } from '../curriculum/lessonPlan.js';
+import { particleOfKey, particleProgress } from '../curriculum/particles.js';
 import {
   spanLabel,
   type ReportFacts,
@@ -121,16 +121,25 @@ export async function collectReportFacts(
     troubles.push({ ...label, failures: spot.failures });
   }
 
-  const introducedOf = async (
+  /**
+   * 導入済みの id を種別ごとに引く。分母は各 curriculum の
+   * `*Progress` に任せる——ここで `.length` を読むと、向こうが
+   * 「教える対象」を絞ったときに黙ってずれる（語彙で二度やった）。
+   */
+  const introducedIds = async (
     type: 'KANA' | 'VOCABULARY' | 'GRAMMAR',
-    resolve: (key: string) => unknown,
-  ): Promise<number> => {
+    resolve: (key: string) => { id: string } | undefined,
+  ): Promise<Set<string>> => {
     const keys = await reviewQueue.listIntroducedKeys(
       deps.executor,
       learner.id,
       type,
     );
-    return keys.filter((key) => resolve(key) !== undefined).length;
+    return new Set(
+      keys
+        .map((key) => resolve(key)?.id)
+        .filter((id): id is string => id !== undefined),
+    );
   };
 
   /**
@@ -141,12 +150,13 @@ export async function collectReportFacts(
    * 二箇所に書いた結果、Mini App が 1301、週報が 1374 と**違う数字を
    * 出していた**（実機で発覚）。数え方は一箇所に置く。
    */
-  const vocabIds = (
-    await reviewQueue.listIntroducedKeys(deps.executor, learner.id, 'VOCABULARY')
-  )
-    .map((key) => vocabOfKey(key)?.id)
-    .filter((id): id is string => id !== undefined);
-  const vocab = vocabProgress(vocabIds);
+  const vocab = vocabProgress([
+    ...(await introducedIds('VOCABULARY', vocabOfKey)),
+  ]);
+  const kana = kanaProgress([...(await introducedIds('KANA', kanaOfKey))]);
+  const grammar = particleProgress(
+    await introducedIds('GRAMMAR', particleOfKey),
+  );
 
   return {
     period,
@@ -157,17 +167,7 @@ export async function collectReportFacts(
     activeDays,
     streak,
     troubles,
-    progress: {
-      kana: {
-        introduced: await introducedOf('KANA', kanaOfKey),
-        total: KANA.length,
-      },
-      vocab,
-      grammar: {
-        introduced: await introducedOf('GRAMMAR', particleOfKey),
-        total: PARTICLES.length,
-      },
-    },
+    progress: { kana, vocab, grammar },
     dueNow: await reviewQueue.countDue(deps.executor, learner.id, now),
     previousAnswered: previous.answered,
   };

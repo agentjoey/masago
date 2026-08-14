@@ -224,11 +224,16 @@ describe('進度の分母は一箇所から', () => {
     expect(teachable).toBe(VOCAB.length - affixes);
   });
 
-  it('gives the report and the mini app the same denominator', async () => {
-    const { vocabProgress } = await import('../../src/curriculum/stage.js');
-    // loadProgress（Mini App）も collectReportFacts（週報）も
-    // この一つの関数を通ること。直接 VOCAB.length を読んでいないか、
-    // ソースを見て確かめる。
+  /**
+   * 進度を出す側は、分母を自分で数えない。
+   *
+   * 語彙で二度ずれた（1374 対 1301）。仮名と助詞は今はたまたま一致して
+   * いるが、「まだ教えない」を足した瞬間に同じことが起きる。
+   *
+   * seed（`*Seed.ts`）は対象外——あちらの total は「knowledge_items に
+   * 何行あるべきか」で、教えない項目も入るのが正しい。
+   */
+  it('never counts a denominator by hand in the progress paths', async () => {
     const { readFileSync } = await import('node:fs');
     // 註釈は外してから見る。「使ってはいけない」と書いた文まで拾って
     // しまうと、規則を説明できなくなる。
@@ -239,11 +244,25 @@ describe('進度の分母は一箇所から', () => {
       'src/learning/reportFacts.ts',
     ]) {
       const code = stripComments(readFileSync(path, 'utf8'));
-      expect(code, `${path} 内で VOCAB.length を直接使っている`).not.toMatch(
-        /VOCAB\.length/,
-      );
+      for (const banned of ['VOCAB.length', 'KANA.length', 'PARTICLES.length']) {
+        expect(code, `${path} が ${banned} を直接読んでいる`).not.toContain(
+          banned,
+        );
+      }
     }
+  });
+
+  it('has one progress function per knowledge type', async () => {
+    const { vocabProgress } = await import('../../src/curriculum/stage.js');
+    const { kanaProgress } = await import('../../src/curriculum/lessonPlan.js');
+    const { particleProgress } = await import(
+      '../../src/curriculum/particles.js'
+    );
     expect(vocabProgress([]).total).toBeGreaterThan(1000);
+    expect(kanaProgress([]).total).toBe(104);
+    expect(particleProgress(new Set()).total).toBe(12);
+    // 導入済みを渡せば数える
+    expect(particleProgress(new Set(['wa', 'ga'])).introduced).toBe(2);
   });
 });
 

@@ -44,13 +44,26 @@ function normalizeZh(text: string): string {
 
 const CONTENT_POS = new Set(['名詞', '動詞', '形容詞', '副詞', '連体詞']);
 
-/** 内容語の見出し。意味が本当に違うかを見るのに使う。 */
+/**
+ * 内容語の見出し。意味が本当に違うかを見るのに使う。
+ *
+ * 文ごとに一度だけ作って覚える。**並べ替えの比較関数の中で作ってはいけない**
+ * ——候補 1,299 件の sort は一万回以上比較するので、そのたびに Set を
+ * 二つ組み立てることになる。実測で一問 3.7ms かかっていて、`/read` を
+ * 叩くたび・Mini App を開くたびに払っていた。文は不変なので使い回せる。
+ */
+const contentWordCache = new Map<string, Set<string>>();
+
 function contentWords(sentence: Sentence): Set<string> {
-  return new Set(
+  const cached = contentWordCache.get(sentence.id);
+  if (cached !== undefined) return cached;
+  const words = new Set(
     sentence.tokens
       .filter((token) => CONTENT_POS.has(token.p))
       .map((token) => token.s),
   );
+  contentWordCache.set(sentence.id, words);
+  return words;
 }
 
 function sameContent(a: Sentence, b: Sentence): boolean {
@@ -59,6 +72,13 @@ function sameContent(a: Sentence, b: Sentence): boolean {
   if (left.size !== right.size) return false;
   for (const word of left) if (!right.has(word)) return false;
   return true;
+}
+
+/** 目標と共有する内容語の数。多いほど紛らわしい＝良い誤答。 */
+function overlapWith(target: Set<string>, candidate: Sentence): number {
+  let count = 0;
+  for (const word of contentWords(candidate)) if (target.has(word)) count += 1;
+  return count;
 }
 
 function shuffle<T>(items: readonly T[], random: Random): T[] {
@@ -73,14 +93,6 @@ function shuffle<T>(items: readonly T[], random: Random): T[] {
     }
   }
   return out;
-}
-
-/** 二文が共有する内容語の数。多いほど紛らわしい＝良い誤答。 */
-function overlap(a: Sentence, b: Sentence): number {
-  const left = contentWords(a);
-  let count = 0;
-  for (const word of contentWords(b)) if (left.has(word)) count += 1;
-  return count;
 }
 
 export interface SentenceQuizOptions {
@@ -124,9 +136,17 @@ export function buildSentenceQuestion(
 
   const wanted = Math.max(0, options.optionCount - 1);
   // 重なりの多い順に候補を並べ、上位から採る。同点は乱数で崩す。
-  const ranked = shuffle(usable, options.random).sort(
-    (a, b) => overlap(target, b) - overlap(target, a),
-  );
+  //
+  // 重なりは**並べる前に一度だけ**数える。比較関数の中で数えると、
+  // 一万回以上の比較のたびに数え直すことになる。
+  const targetWords = contentWords(target);
+  const ranked = shuffle(usable, options.random)
+    .map((candidate) => ({
+      candidate,
+      overlap: overlapWith(targetWords, candidate),
+    }))
+    .sort((a, b) => b.overlap - a.overlap)
+    .map((entry) => entry.candidate);
 
   const label = (sentence: Sentence): string =>
     options.kind === 'ZH_TO_JA' ? sentence.text : (sentence.zh ?? '');

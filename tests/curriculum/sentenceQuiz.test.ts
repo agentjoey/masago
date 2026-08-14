@@ -17,6 +17,9 @@ function normalize(text: string): string {
   return text.replace(/[\s。，、．,.！!？?；;：:]/gu, '');
 }
 
+/** 試験側も id 引きを O(1) にする。O(n) の find を回すと本体の遅さが霞む。 */
+const BY_ID = new Map(TRANSLATED.map((sentence) => [sentence.id, sentence]));
+
 describe('buildSentenceQuestion', () => {
   it('builds a question from a real sentence and its human translation', () => {
     const target = TRANSLATED[0];
@@ -57,10 +60,9 @@ describe('buildSentenceQuestion', () => {
         random: seeded(index + 1),
       });
       if (question === undefined) continue;
-      const meanings = question.options.map((option) => {
-        const sentence = TRANSLATED.find((s) => s.id === option.sentenceId);
-        return normalize(sentence?.zh ?? '');
-      });
+      const meanings = question.options.map((option) =>
+        normalize(BY_ID.get(option.sentenceId)?.zh ?? ''),
+      );
       expect(new Set(meanings).size, question.prompt).toBe(meanings.length);
     }
   });
@@ -120,7 +122,7 @@ describe('buildSentenceQuestion', () => {
       const targetWords = words(target);
       const shares = question.options.some((option) => {
         if (option.sentenceId === target.id) return false;
-        const other = TRANSLATED.find((s) => s.id === option.sentenceId);
+        const other = BY_ID.get(option.sentenceId);
         if (other === undefined) return false;
         return [...words(other)].some((word) => targetWords.has(word));
       });

@@ -76,6 +76,8 @@ function makeConfig(overrides?: {
       userTimezone: 'Asia/Singapore',
       idleMinutes: 30,
       dailyReminderLocalTime: '20:30',
+    weeklyReportLocalTime: '20:00',
+    weeklyReportWeekday: 0,
       nightlyBackupLocalTime: '03:00',
     },
     budget: { dailyCostSoftLimitUsd: 1, monthlyCostSoftLimitUsd: 10 },

@@ -23,8 +23,9 @@ import { ensureParticlesSeeded } from './learning/particleSeed.js';
 import * as ttsCacheRepo from './db/repositories/ttsCache.js';
 import { speak } from './speech/voiceCache.js';
 import { collectReminderFacts } from './learning/reminderFacts.js';
+import { collectReportFacts } from './learning/reportFacts.js';
 import { reflowVocabulary } from './learning/vocabReflow.js';
-import { createDailyReminder } from './scheduler/index.js';
+import { createDailyReminder, createReportScheduler } from './scheduler/index.js';
 import {
   localDateKey,
   partsInZone,
@@ -465,6 +466,30 @@ const dailyReminder = createDailyReminder({
 });
 
 /**
+ * 週報・月報（V1.5）。日次リマインダと同じく、DB を定期ポーリングしない
+ * ——週に一度だけ起きて、その時に一度だけ問い合わせる（§9.1）。
+ */
+const reportScheduler = createReportScheduler({
+  logger,
+  weekday: config.session.weeklyReportWeekday,
+  localTime: config.session.weeklyReportLocalTime,
+  timeZone: config.session.userTimezone,
+  collect: (period, now) =>
+    collectReportFacts(
+      {
+        executor: db,
+        telegramUserId: config.telegram.allowedUserId,
+        timeZone: config.session.userTimezone,
+      },
+      period,
+      now,
+    ),
+  send: async (text) => {
+    await bot.api.sendMessage(config.telegram.allowedUserId, text);
+  },
+});
+
+/**
  * Mini App（V3）と健康確認を同じポートで出す。ruby 排版・進度・錯題本・
  * 復習日历は同じ後端から読む——別集計を作ると bot と数字が食い違う。
  */
@@ -529,6 +554,7 @@ const healthServer = startMiniAppServer({
 
 onShutdown(() => {
   dailyReminder.stop();
+  reportScheduler.stop();
 });
 onShutdown(() => bot.stop());
 onShutdown(
@@ -552,6 +578,7 @@ async function main(): Promise<void> {
   });
   logger.info('masago started', { version: pkg.version });
   dailyReminder.start();
+  reportScheduler.start();
   await publishCommandList(bot, logger);
   await publishMenuButton(bot, logger, config.server.miniAppUrl);
   await startWithRetry(bot, {

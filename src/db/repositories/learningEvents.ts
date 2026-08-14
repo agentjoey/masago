@@ -1,4 +1,4 @@
-import { and, count, eq, gte, inArray } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, lt } from 'drizzle-orm';
 import {
   knowledgeItems,
   learningEvents,
@@ -104,4 +104,99 @@ export async function existingDedupeKeys(
     .from(learningEvents)
     .where(inArray(learningEvents.dedupeKey, [...keys]));
   return new Set(rows.map((row) => row.dedupeKey));
+}
+
+export interface PeriodTally {
+  /** 答えた回数（導入は含まない）。 */
+  readonly answered: number;
+  readonly correct: number;
+  readonly failed: number;
+  /** 期間中に新しく導入した数。 */
+  readonly introduced: number;
+}
+
+/** ある期間の集計。週報・月報の土台（§3.3 の事件列から数える）。 */
+export async function tallyBetween(
+  tx: Executor,
+  learnerId: string,
+  since: Date,
+  until: Date,
+): Promise<PeriodTally> {
+  const rows = await tx
+    .select({ eventType: learningEvents.eventType, count: count() })
+    .from(learningEvents)
+    .where(
+      and(
+        eq(learningEvents.learnerId, learnerId),
+        gte(learningEvents.createdAt, since),
+        lt(learningEvents.createdAt, until),
+      ),
+    )
+    .groupBy(learningEvents.eventType);
+
+  const of = (type: string): number =>
+    rows.find((row) => row.eventType === type)?.count ?? 0;
+
+  const correct = of('USER_CORRECT') + of('USED_SPONTANEOUSLY');
+  const failed = of('FAILED_RECALL') + of('USER_ERROR');
+  return {
+    answered: correct + failed + of('USED_WITH_HINT'),
+    correct,
+    failed,
+    introduced: of('INTRODUCED'),
+  };
+}
+
+export interface TroubleSpot {
+  readonly knowledgeItemId: string;
+  readonly knowledgeKey: string;
+  readonly knowledgeType: (typeof knowledgeItems.$inferSelect)['type'];
+  readonly failures: number;
+}
+
+/**
+ * その期間に間違えた回数が多い順。週報でいちばん役に立つ行。
+ *
+ * 「今週 120 題やりました」より「を と が が 7 回混ざりました」のほうが、
+ * 次に何をすればいいかが決まる。
+ */
+export async function troubleSpotsBetween(
+  tx: Executor,
+  learnerId: string,
+  since: Date,
+  until: Date,
+  limit: number,
+): Promise<TroubleSpot[]> {
+  const rows = await tx
+    .select({
+      knowledgeItemId: learningEvents.knowledgeItemId,
+      key: knowledgeItems.key,
+      type: knowledgeItems.type,
+      failures: count(),
+    })
+    .from(learningEvents)
+    .innerJoin(
+      knowledgeItems,
+      eq(learningEvents.knowledgeItemId, knowledgeItems.id),
+    )
+    .where(
+      and(
+        eq(learningEvents.learnerId, learnerId),
+        inArray(learningEvents.eventType, ['FAILED_RECALL', 'USER_ERROR']),
+        gte(learningEvents.createdAt, since),
+        lt(learningEvents.createdAt, until),
+      ),
+    )
+    .groupBy(learningEvents.knowledgeItemId, knowledgeItems.key, knowledgeItems.type)
+    .orderBy(desc(count()))
+    .limit(limit);
+
+  return rows
+    .filter((row) => row.knowledgeItemId !== null)
+    .map((row) => ({
+      knowledgeItemId: row.knowledgeItemId as string,
+      knowledgeKey: row.key,
+      knowledgeType: row.type,
+      failures: row.failures,
+    }));
 }

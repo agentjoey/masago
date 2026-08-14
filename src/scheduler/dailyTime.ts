@@ -144,3 +144,67 @@ export function localDateKey(instant: Date, timeZone: string): string {
   const pad = (value: number): string => String(value).padStart(2, '0');
   return `${String(parts.year)}-${pad(parts.month)}-${pad(parts.day)}`;
 }
+
+export interface WeeklyTimeOptions extends DailyTimeOptions {
+  /** 0 = 日曜。利用者の地域時間での曜日。 */
+  readonly weekday: number;
+}
+
+/**
+ * `now` より後で最初に来る、その地域時間の「曜日 + 時刻」。
+ *
+ * 日次と同じく、ちょうど同時刻なら次の週に送る——発火直後に次回を
+ * 計算するので、「以上」にすると同じ瞬間を拾って二度鳴る。
+ *
+ * 曜日は**その地域での**曜日で数える。UTC の曜日で決めると、
+ * 時差の大きい地域では狙った曜日から一日ずれる。
+ */
+export function nextWeeklyOccurrence(
+  now: Date,
+  options: WeeklyTimeOptions,
+): Date | undefined {
+  const parsed = parseLocalTime(options.localTime);
+  if (parsed === undefined) return undefined;
+  if (!Number.isInteger(options.weekday) || options.weekday < 0 || options.weekday > 6) {
+    return undefined;
+  }
+
+  // 今日から 7 日先までを順に見る。夏時間の切り替えを跨いでも、
+  // 一日ずつ組み立てれば壁時計の時刻は保たれる。
+  const today = partsInZone(now, options.timeZone);
+  for (let ahead = 0; ahead <= 7; ahead += 1) {
+    const day = new Date(
+      Date.UTC(today.year, today.month - 1, today.day + ahead),
+    );
+    const candidate = zonedWallClockToInstant(
+      {
+        year: day.getUTCFullYear(),
+        month: day.getUTCMonth() + 1,
+        day: day.getUTCDate(),
+        hour: parsed.hour,
+        minute: parsed.minute,
+      },
+      options.timeZone,
+    );
+    if (candidate.getTime() <= now.getTime()) continue;
+    if (weekdayInZone(candidate, options.timeZone) !== options.weekday) continue;
+    return candidate;
+  }
+  return undefined;
+}
+
+const WEEKDAY_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+};
+
+/** その瞬間が、その地域では何曜日か（0 = 日曜）。 */
+export function weekdayInZone(instant: Date, timeZone: string): number {
+  let formatter = WEEKDAY_FORMATTERS.get(timeZone);
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' });
+    WEEKDAY_FORMATTERS.set(timeZone, formatter);
+  }
+  const name = formatter.format(instant);
+  return WEEKDAY_INDEX[name] ?? 0;
+}

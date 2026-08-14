@@ -104,6 +104,12 @@ const envSchema = z.object({
     .string()
     .regex(TIME_PATTERN, 'must be HH:MM in 24-hour format')
     .default('20:30'),
+  WEEKLY_REPORT_LOCAL_TIME: z
+    .string()
+    .regex(TIME_PATTERN, 'must be HH:MM in 24-hour format')
+    .default('20:00'),
+  /** 0 = 周日。默认周日晚上——一周结束时回顾，第二天正好接着做。 */
+  WEEKLY_REPORT_WEEKDAY: z.coerce.number().int().min(0).max(6).default(0),
   NIGHTLY_BACKUP_LOCAL_TIME: z
     .string()
     .regex(TIME_PATTERN, 'must be HH:MM in 24-hour format')
@@ -176,6 +182,8 @@ export const configSchema = envSchema.transform((env) => ({
     userTimezone: env.USER_TIMEZONE,
     idleMinutes: env.SESSION_IDLE_MINUTES,
     dailyReminderLocalTime: env.DAILY_REMINDER_LOCAL_TIME,
+    weeklyReportLocalTime: env.WEEKLY_REPORT_LOCAL_TIME,
+    weeklyReportWeekday: env.WEEKLY_REPORT_WEEKDAY,
     nightlyBackupLocalTime: env.NIGHTLY_BACKUP_LOCAL_TIME,
   },
   budget: {

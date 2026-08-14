@@ -645,11 +645,17 @@ S0 五十音 → S1 N5；FSRS 复习；文字交互 + TTS 示范；假名音库�
 S2 N4；形态素解析驱动的程序化错误检测；周报与月度基准；MCP 第二界面。
 
 **进度**：S2 N4 ✅（657 词）；形态素解析 ✅（§8）；周/月报推送 ✅
-（周日 20:00，含「这些还不稳」三项）；MCP **设计完成、未实现**（[`mcp.md`](mcp.md)）。
+（周日 20:00，含「这些还不稳」三项）；MCP 方案 A ✅ **已上线**
+（只读 6 工具、能力 URL；[`mcp.md`](mcp.md)）。方案 B（OAuth）仍是设计。
 
 另外补上的：会话里正确用出的词回流 FSRS ✅（`USED_SPONTANEOUSLY`，
 一天一次，误用的词不计）；作文判定的误收率实测 ✅（0/117，
-[`scenario-learning.md`](scenario-learning.md) §9）。
+[`scenario-learning.md`](scenario-learning.md) §9）；成本追踪修复 ✅
+（此前 `usage_records` 线上 0 行，见 §12 修正）。
+
+> **待办清单不写在这里。** 路线图（阶段划分）在本节；具体 backlog 的
+> 唯一出处是 Obsidian 的 `P037-MasaGo/PRD.md`。两处都写必然分叉
+> ——这个项目已经在词汇分母、活动统计、每日上限上各栽过一次。
 
 ## V2 — 语音回归
 恢复语音输入（STT 适配器与 remux 管线已建好，直接启用）；发音评估（独立声学模块，禁止用 STT confidence 代替）；shadowing。

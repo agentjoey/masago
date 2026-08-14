@@ -614,3 +614,80 @@ export function renderCompositionResult(
   if (note.trim() !== '') lines.push('', note.trim());
   return lines.join('\n');
 }
+
+/* ─────────────── 分野別語彙（商务谈判 / 高尔夫 / AI） ─────────────── */
+
+export interface DomainOverviewRow {
+  readonly domain: { id: string; name: string };
+  readonly introduced: number;
+  readonly total: number;
+  readonly due: number;
+}
+
+/**
+ * 分野の一覧。
+ *
+ * 主線（仮名 → N5 → N4）とは別の線であることを明示する。混ぜて考えると
+ * 「どっちを先にやるのか」が分からなくなる。
+ */
+export function renderDomainList(rows: readonly DomainOverviewRow[]): string {
+  const lines = ['🗂 专业词汇', '', '和主线（五十音 → N5 → N4）分开计算。', ''];
+  for (const row of rows) {
+    const due = row.due > 0 ? `　待复习 ${String(row.due)}` : '';
+    lines.push(
+      `${row.domain.name}　${String(row.introduced)}/${String(row.total)}${due}`,
+    );
+  }
+  lines.push('', '选一个开始。');
+  return lines.join('\n');
+}
+
+/** 新しい分野語のカード。読みは必ず添える（読めない字は覚えようが無い）。 */
+export function renderDomainCard(
+  entry: { expression: string; reading: string; meaning: string },
+  index: number,
+  total: number,
+): string {
+  const lines = [`${String(index)}/${String(total)}`, '', entry.expression];
+  if (entry.reading !== entry.expression) lines.push(`　${entry.reading}`);
+  lines.push('', entry.meaning);
+  return lines.join('\n');
+}
+
+export function renderDomainQuestion(question: {
+  kind: 'WORD_TO_MEANING' | 'MEANING_TO_WORD';
+  prompt: string;
+  promptReading?: string;
+}): string {
+  if (question.kind === 'MEANING_TO_WORD') {
+    return `哪个词是「${question.prompt}」？`;
+  }
+  const reading =
+    question.promptReading === undefined ? '' : `\n　${question.promptReading}`;
+  return `这个词是什么意思？\n\n${question.prompt}${reading}`;
+}
+
+export function renderDomainCorrect(entry: {
+  expression: string;
+  reading: string;
+  meaning: string;
+}): string {
+  const reading =
+    entry.reading === entry.expression ? '' : `（${entry.reading}）`;
+  return `✅ ${entry.expression}${reading} = ${entry.meaning}`;
+}
+
+export function renderDomainWrong(
+  target: { expression: string; reading: string; meaning: string },
+  chosen: { expression: string; meaning: string } | undefined,
+): string {
+  const reading =
+    target.reading === target.expression ? '' : `（${target.reading}）`;
+  const lines = [
+    `❌ 正确答案是 ${target.expression}${reading} — ${target.meaning}`,
+  ];
+  if (chosen !== undefined && chosen.expression !== target.expression) {
+    lines.push(`你选的 ${chosen.expression} 是「${chosen.meaning}」`);
+  }
+  return lines.join('\n');
+}

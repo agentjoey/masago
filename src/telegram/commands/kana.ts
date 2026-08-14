@@ -156,8 +156,28 @@ export function registerKanaCommands(
   bot.command('write', run((userId) => commands.write(userId)));
   bot.command('read', run((userId) => commands.read(userId)));
   bot.command('compose', run((userId) => commands.compose(userId)));
+  bot.command('domain', run((userId) => commands.domain(userId)));
   bot.command('cost', run((userId) => commands.cost(userId)));
   bot.command('explain', run((userId) => commands.explain(userId)));
+
+  // 分野の選択。採点ではないので別経路——ここを採点側に混ぜると
+  // 「答えを選んだ」と誤って解釈される。
+  bot.callbackQuery(/^dp:/, async (ctx) => {
+    const userId = ctx.from.id;
+    await ctx.answerCallbackQuery();
+    const domainId = ctx.callbackQuery.data.slice('dp:'.length);
+    try {
+      await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+    } catch (error) {
+      ctx.logger.debug('could not clear keyboard', { error });
+    }
+    try {
+      await send(ctx, await commands.domain(userId, domainId), deps);
+    } catch (error) {
+      ctx.logger.error('domain command failed', { error });
+      await ctx.reply(FAILED_REPLY);
+    }
+  });
 
   /**
    * 出題への返信を、通常の会話より先に受け取る。
@@ -198,8 +218,8 @@ export function registerKanaCommands(
     await send(ctx, replies, deps);
   });
 
-    // 仮名は kq:、単語は vq:、助詞は wp:、読解は rq:。同じ経路で採点する。
-  bot.callbackQuery(/^(kq|vq|wp|rq):/, async (ctx) => {
+    // 仮名 kq:、単語 vq:、助詞 wp:、読解 rq:、分野 dq:。同じ経路で採点する。
+  bot.callbackQuery(/^(kq|vq|wp|rq|dq):/, async (ctx) => {
     const userId = ctx.from.id;
     // 先に応答しないと、Telegram はボタンを押しっぱなしの表示にする。
     await ctx.answerCallbackQuery();

@@ -68,6 +68,7 @@ export const BOT_COMMANDS = [
   { command: 'write', description: '练写句子（助词与语序）' },
   { command: 'read', description: '读句子，选意思' },
   { command: 'compose', description: '中译日：看中文写日语' },
+  { command: 'domain', description: '专业词汇（商务 / 高尔夫 / AI）' },
   { command: 'review', description: '只复习到期的' },
   { command: 'progress', description: '学习进度' },
   { command: 'explain', description: '讲解刚才那一项' },

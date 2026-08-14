@@ -22,6 +22,7 @@ import { planVocabSession } from './learning/vocabSession.js';
 import { ensureKanaSeeded } from './learning/kanaSeed.js';
 import { ensureVocabSeeded } from './learning/vocabSeed.js';
 import { ensureParticlesSeeded } from './learning/particleSeed.js';
+import { ensureDomainVocabSeeded } from './learning/domainSeed.js';
 import * as ttsCacheRepo from './db/repositories/ttsCache.js';
 import { speak } from './speech/voiceCache.js';
 import { createSentenceAudioCache } from './speech/sentenceAudio.js';
@@ -291,6 +292,10 @@ async function runStartupChecks(): Promise<{ dbRoundTripMs: number }> {
   const particlesSeeded = await ensureParticlesSeeded(db);
   if (particlesSeeded.inserted > 0) {
     logger.info('seeded particle knowledge items', { ...particlesSeeded });
+  }
+  const domainSeeded = await ensureDomainVocabSeeded(db);
+  if (domainSeeded.inserted > 0) {
+    logger.info('seeded domain vocabulary', { ...domainSeeded });
   }
   for (const warning of keyFormatWarnings()) {
     logger.warn('provider key format looks unusual', { warning });

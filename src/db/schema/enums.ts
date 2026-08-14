@@ -31,6 +31,10 @@ export const knowledgeType = pgEnum('knowledge_type', [
   'GRAMMAR',
   'EXPRESSION',
   'ERROR_PATTERN',
+  // 分野別語彙（商务谈判 / 高尔夫 / AI）。VOCABULARY と分けるのは、
+  // `countDue(…, 'VOCABULARY')` のような型で引く問い合わせに混ざると
+  // /today や /vocab の件数が狂うため——主線の進度は主線だけで数える。
+  'DOMAIN',
 ]);
 
 export const learningEventType = pgEnum('learning_event_type', [

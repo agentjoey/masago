@@ -2,6 +2,11 @@ import { KANA_BY_ID, kanaOfKey } from '../curriculum/kana.js';
 import {
   renderCorrect,
   renderActivity,
+  renderDomainCard,
+  renderDomainCorrect,
+  renderDomainList,
+  renderDomainQuestion,
+  renderDomainWrong,
   renderCompositionQuestion,
   renderCompositionResult,
   renderCost,
@@ -53,6 +58,15 @@ import {
   nextVocabQuestion,
   planVocabSession,
 } from './vocabSession.js';
+import {
+  decodeDomainAnswer,
+  domainOverview,
+  encodeDomainAnswer,
+  gradeDomainAnswer,
+  introduceDomainVocab,
+  nextDomainQuestion,
+  planDomainSession,
+} from './domainSession.js';
 import {
   gradeComposition,
   nextCompositionQuestion,
@@ -140,6 +154,8 @@ export interface KanaCommands {
   read(telegramUserId: number): Promise<KanaReply[]>;
   /** 中訳日：中国語を見て日本語を書く。 */
   compose(telegramUserId: number): Promise<KanaReply[]>;
+  /** 分野別語彙。引数無しなら分野の一覧を出す。 */
+  domain(telegramUserId: number, domainId?: string): Promise<KanaReply[]>;
   /** 用量と費用。 */
   cost(telegramUserId: number): Promise<KanaReply[]>;
   /** 直近に答えた項目の解説。 */
@@ -344,6 +360,33 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
     ];
   }
 
+  /** 分野別語彙の次の一問。 */
+  async function askNextDomain(
+    learnerId: string,
+    domainId: string,
+    now: Date,
+    answered: number,
+  ): Promise<KanaReply[]> {
+    const next = await nextDomainQuestion(executor, learnerId, domainId, now, {
+      optionCount: deps.optionCount,
+      random: deps.random,
+    });
+    if (next === undefined) return [{ text: renderDrillFinished(answered) }];
+    return [
+      {
+        text: renderDomainQuestion(next.question),
+        buttons: next.question.options.map((option) => ({
+          label: option.label,
+          data: encodeDomainAnswer(next.question.targetId, option.entryId),
+        })),
+        // 読みは音でも確かめさせる。専門語は特に読みが難しい。
+        ...(next.question.kind === 'WORD_TO_MEANING'
+          ? { speakText: next.entry.reading }
+          : {}),
+      },
+    ];
+  }
+
   /** 次の一問。無ければ締めの一言。 */
   async function askNext(
     learnerId: string,
@@ -523,6 +566,32 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
 
       const now = deps.now();
+
+      // 分野別語彙の回答。
+      const domainAnswer = decodeDomainAnswer(callbackData);
+      if (domainAnswer !== undefined) {
+        const graded = await gradeDomainAnswer(
+          executor,
+          learnerId,
+          domainAnswer,
+          now,
+          deps.requestRetention,
+          responseMsOf(askedAt, now),
+        );
+        if (graded === undefined) {
+          return [{ text: '这道题已经过期了，发 /domain 继续。' }];
+        }
+        const feedback: KanaReply = graded.correct
+          ? { text: renderDomainCorrect(graded.target) }
+          : {
+              text: renderDomainWrong(graded.target, graded.chosen),
+              speakText: graded.target.reading,
+            };
+        return [
+          feedback,
+          ...(await askNextDomain(learnerId, graded.target.domain, now, 1)),
+        ];
+      }
 
       // 読解の回答。
       const readingAnswer = decodeReadingAnswer(callbackData);
@@ -818,6 +887,56 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         ];
       }
       return askNextComposition(learnerId);
+    },
+
+    async domain(telegramUserId, domainId) {
+      const learnerId = await learnerIdOf(telegramUserId);
+      if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
+      const now = deps.now();
+
+      // 引数無し＝一覧。どの分野をやるかは学習者が選ぶ——主線と違い、
+      // ここに「次はこれ」という順序は無い。
+      if (domainId === undefined) {
+        const rows = await domainOverview(executor, learnerId, now);
+        return [
+          {
+            text: renderDomainList(rows),
+            buttons: rows.map((row) => ({
+              label:
+                row.due > 0
+                  ? `${row.domain.name}（${String(row.due)}）`
+                  : row.domain.name,
+              data: `dp:${row.domain.id}`,
+            })),
+          },
+        ];
+      }
+
+      const lesson = await planDomainSession(executor, learnerId, domainId, now, {
+        newPerDay: deps.newPerDay,
+        maxReviews: deps.maxReviews,
+      });
+      if (lesson === undefined) {
+        return [{ text: '没有这个分类。发 /domain 看看有哪些。' }];
+      }
+
+      const replies: KanaReply[] = [];
+      if (lesson.newEntries.length > 0) {
+        lesson.newEntries.forEach((entry, index) => {
+          replies.push({
+            text: renderDomainCard(entry, index + 1, lesson.newEntries.length),
+            speakText: entry.reading,
+          });
+        });
+        await introduceDomainVocab(
+          executor,
+          learnerId,
+          lesson.newEntries.map((entry) => entry.id),
+          now,
+        );
+      }
+      replies.push(...(await askNextDomain(learnerId, domainId, now, 0)));
+      return replies;
     },
 
     async answerTyped(telegramUserId, questionText, typed, askedAt) {

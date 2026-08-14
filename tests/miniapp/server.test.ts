@@ -53,6 +53,14 @@ async function start(handlers?: Partial<Record<string, () => Promise<unknown>>>)
         calls.push(`practice:${key}`);
         return { ok: true };
       },
+      reading: async (_userId, level) => {
+        calls.push(`reading:${level}`);
+        return { ok: true };
+      },
+      readingAnswer: async (_userId, target, chosen) => {
+        calls.push(`readingAnswer:${target}:${chosen}`);
+        return { ok: true };
+      },
     },
   });
   await new Promise<void>((resolve) => server.once('listening', resolve));

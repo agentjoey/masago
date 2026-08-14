@@ -35,6 +35,8 @@ import {
   loadErrors,
   loadKanaTable,
   loadProgress,
+  loadReading,
+  judgeReading,
   markDueNow,
   startMiniAppServer,
 } from './miniapp/index.js';
@@ -448,6 +450,21 @@ const healthServer = startMiniAppServer({
       const ok = await markDueNow(db, learnerId, key, new Date());
       return { ok };
     },
+    reading: async (telegramUserId, level) => {
+      const learnerId = await findLearnerId(db, telegramUserId);
+      if (learnerId === undefined) return null;
+      return loadReading(db, learnerId, {
+        optionCount: config.kana.optionCount,
+        random: Math.random,
+        level:
+          level === 'UNKNOWN' || level === 'NONE' || level === 'ALL'
+            ? level
+            : 'ALL',
+      });
+    },
+    readingAnswer: (_telegramUserId, targetId, chosenId) =>
+      // 採点は文の対だけで決まるので DB を読まない。
+      Promise.resolve(judgeReading(targetId, chosenId)),
     calendar: async (telegramUserId) => {
       const learnerId = await findLearnerId(db, telegramUserId);
       if (learnerId === undefined) return [];

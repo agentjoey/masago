@@ -103,6 +103,26 @@ rt { font-size: .5em; color: var(--muted); }
 .err ins { text-decoration: none; }
 .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--muted); border-radius: 4px; padding: 0 4px; margin-left: 6px; }
 .empty { color: var(--muted); text-align: center; padding: 32px 0; }
+/* 本文の振り仮名。Telegram のメッセージでは出せない、これが Mini App の主目的。 */
+.sent { font-size: 26px; line-height: 2.6; text-align: center; padding: 8px 0 16px; }
+.sent ruby { ruby-position: over; }
+/* rt の既定は小さすぎて、読みを覚えるための字として読めない。 */
+.sent rt { font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+.choices { display: grid; gap: 8px; }
+.choice {
+  width: 100%; text-align: left; padding: 12px 14px; font: inherit;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); color: inherit; cursor: pointer;
+}
+.choice[data-state="right"] { border-color: #2e9e5b; background: #2e9e5b18; }
+.choice[data-state="wrong"] { border-color: #c0392b; background: #c0392b18; }
+.choice[disabled] { cursor: default; }
+.levels { display: flex; gap: 6px; justify-content: center; margin-bottom: 10px; }
+.levels button {
+  font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--card); color: var(--muted); cursor: pointer;
+}
+.levels button[aria-selected="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
 </style>
 </head>
 <body>
@@ -110,6 +130,7 @@ rt { font-size: .5em; color: var(--muted); }
 <nav>
   <button data-tab="progress" aria-selected="true">进度</button>
   <button data-tab="kana" aria-selected="false">五十音</button>
+  <button data-tab="reading" aria-selected="false">阅读</button>
   <button data-tab="errors" aria-selected="false">错题本</button>
   <button data-tab="calendar" aria-selected="false">日历</button>
 </nav>
@@ -259,9 +280,60 @@ function calendarView(days) {
     '<div class="muted" style="margin-top:8px">格子里的数字是当天到期的项目数。</div></div>';
 }
 
+/* ---------- 阅读 ---------- */
+let rubyLevel = 'ALL';
+let reading = null;
+
+function rubyHtml(segments) {
+  return segments.map((s) => s.ruby === null
+    ? esc(s.text)
+    : '<ruby>' + esc(s.text) + '<rt>' + esc(s.ruby) + '</rt></ruby>').join('');
+}
+
+function readingView(d) {
+  if (d === null) return '<div class="empty">还没有可读的句子。先发 /vocab 学一些单词。</div>';
+  reading = d;
+  const levels = [['ALL', '全部注音'], ['UNKNOWN', '只标生词'], ['NONE', '不注音']]
+    .map(([v, label]) => '<button data-level="' + v + '" aria-selected="' +
+      (v === d.level) + '">' + label + '</button>').join('');
+  const choices = d.options.map((o) =>
+    '<button class="choice" data-id="' + esc(o.id) + '">' + esc(o.label) + '</button>').join('');
+  return '<div class="levels">' + levels + '</div>' +
+    '<div class="card"><div class="sent">' + rubyHtml(d.segments) + '</div></div>' +
+    '<div class="muted" style="margin:0 0 8px">这句话是什么意思？</div>' +
+    '<div class="choices">' + choices + '</div>' +
+    '<div id="verdict"></div>';
+}
+
+async function answerReading(chosenId) {
+  if (reading === null) return;
+  const buttons = [...view.querySelectorAll('.choice')];
+  for (const b of buttons) b.disabled = true;
+  let v;
+  try {
+    v = await api('/api/reading/answer', { target: reading.sentenceId, chosen: chosenId });
+  } catch (err) {
+    document.getElementById('verdict').innerHTML =
+      '<div class="empty">判分失败：' + esc(err.message || err) + '</div>';
+    return;
+  }
+  if (v === null) return;
+  for (const b of buttons) {
+    if (b.dataset.id === chosenId) b.dataset.state = v.correct ? 'right' : 'wrong';
+    // 間違えたときは正解も示す。どれが正しかったか分からないまま次へ行かせない。
+    else if (!v.correct && b.textContent === v.answer) b.dataset.state = 'right';
+  }
+  document.getElementById('verdict').innerHTML =
+    '<div class="card" style="margin-top:12px">' +
+    (v.correct ? '✅ 答对了' : '❌ 正确答案：' + esc(v.answer)) +
+    '<div style="margin-top:10px"><button class="choice" id="next">下一句</button></div></div>';
+  document.getElementById('next').addEventListener('click', () => show('reading'));
+}
+
 const tabs = {
   progress: ['/api/progress', progressView],
   kana: ['/api/kana', kanaView],
+  reading: ['/api/reading', readingView],
   errors: ['/api/errors', errorsView],
   calendar: ['/api/calendar', calendarView],
 };
@@ -272,7 +344,7 @@ async function show(tab) {
   view.innerHTML = '<div class="empty">加载中…</div>';
   try {
     const [path, render] = tabs[tab];
-    view.innerHTML = render(await api(path));
+    view.innerHTML = render(await api(path, tab === 'reading' ? { level: rubyLevel } : undefined));
   } catch (err) {
     view.innerHTML = '<div class="empty">读取失败：' + esc(err.message || err) + '</div>';
   }
@@ -280,7 +352,11 @@ async function show(tab) {
 
 view.addEventListener('click', (e) => {
   const cell = e.target.closest('.cell[data-id]');
-  if (cell !== null) openKana(cell.dataset.id);
+  if (cell !== null) { openKana(cell.dataset.id); return; }
+  const level = e.target.closest('.levels button[data-level]');
+  if (level !== null) { rubyLevel = level.dataset.level; show('reading'); return; }
+  const choice = e.target.closest('.choice[data-id]');
+  if (choice !== null && !choice.disabled) answerReading(choice.dataset.id);
 });
 sheet.addEventListener('click', (e) => { if (e.target === sheet) sheet.close(); });
 for (const b of document.querySelectorAll('nav button'))

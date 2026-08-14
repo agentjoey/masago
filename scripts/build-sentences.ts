@@ -21,6 +21,7 @@
  * 済ませるため——問題を組むのに必要なのは品詞と読みだけで、
  * それは今ここで確定できる。
  */
+import * as OpenCC from 'opencc-js';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -50,14 +51,16 @@ const MIN_CONTENT_WORDS = 2;
 const MAX_OUTPUT = 3500;
 
 /**
- * 繁体字にしか無い字（高頻度のものだけ）。
+ * 繁体字を簡体字に直す（OpenCC、MIT / Apache-2.0）。
  *
- * 訳が複数あるときに簡体字のほうを選ぶための目安で、字種の判定器ではない。
- * 繁体字しか無ければそれを使う——読みにくいのと、意味が分からないのとでは
- * 後者のほうが困る。
+ * Tatoeba の cmn には簡体字と繁体字が混ざっている。実測で訳の 27.8% が
+ * 繁体字を含んでいて、そのまま出すと四択の中で字体がばらつく。読めなくは
+ * ないが、教材としては揃っていたほうがよい。
+ *
+ * **変換は構築時に一度だけ**。devDependency に留めて、実行時には
+ * 変換済みの文字列だけを積む——辞書を本番に持ち込まない（§9.1 と同じ理由）。
  */
-const TRADITIONAL_ONLY =
-  /[買賣說個們來這對還會學國東氣長點種樣現實體開關聞語頭馬鳥龍魚車門風飛時間問題經過發現數樂視聽讀寫書愛親歸鄉黃綠紅藍銀鐵錢價億萬歲點燈熱冷靜運動輪轉遠邊進連遲選適達違鄰陽階際隨險雞離難雲電需靜韓題顏願風飄飯飲養館馬駅騎驗體髮鬥鳥鳴鹽麗麵黃齒]/u;
+const toSimplified = OpenCC.Converter({ from: 'tw', to: 'cn' });
 
 /** 既習の範囲外の活用形。これを使う文は N5 では読めない。 */
 const HARD_FORMS = ['仮定形', '命令', '未然ウ接続', '体言接続', '未然形'];
@@ -144,10 +147,9 @@ async function loadTranslations(): Promise<Map<string, string>> {
 
   const chosen = new Map<string, string>();
   for (const [id, list] of candidates) {
-    // 簡体字の訳があればそちらを採る。
-    const simplified = list.find((text) => !TRADITIONAL_ONLY.test(text));
-    const pick = simplified ?? list[0];
-    if (pick !== undefined) chosen.set(id, pick);
+    // 短い訳を採る。長い訳は説明が混ざっていることが多い。
+    const pick = [...list].sort((a, b) => a.length - b.length)[0];
+    if (pick !== undefined) chosen.set(id, toSimplified(pick));
   }
   return chosen;
 }

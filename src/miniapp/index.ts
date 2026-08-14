@@ -10,6 +10,13 @@ export {
   loadProgress,
   markDueNow,
 } from './data.js';
+export { loadReading, judgeReading, readingSegments } from './reading.js';
+export type {
+  ReadingPayload,
+  ReadingSegment,
+  ReadingVerdict,
+  RubyLevel,
+} from './reading.js';
 export type {
   CalendarDay,
   ErrorEntry,

@@ -2,6 +2,11 @@ import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { join } from 'node:path';
 import type { Logger } from '../observability/index.js';
+import {
+  handleMcpRequest,
+  RateLimiter,
+  type McpData,
+} from '../mcp/server.js';
 import { verifyInitData } from './auth.js';
 import { renderPage } from './page.js';
 
@@ -45,6 +50,29 @@ export interface MiniAppServerOptions {
   /** この利用者以外は拒否する。V1 は単一利用者（§10）。 */
   readonly allowedTelegramUserId: number;
   readonly handlers: MiniAppHandlers;
+  /**
+   * MCP 第二界面（docs/mcp.md 方案 A）。省略すると `/mcp` は 404。
+   *
+   * **鍵が未設定なら丸ごと出さない**——空の鍵で通る入口を残すと、
+   * 設定を忘れただけで誰でも読めるようになる。
+   */
+  readonly mcp?: {
+    readonly token: string;
+    readonly ratePerMinute: number;
+    readonly baseUrl: string;
+    readonly data: McpData;
+  };
+}
+
+/**
+ * ログに出す前にパスを均す。
+ *
+ * `/mcp/<token>` をそのまま書くと、鍵がログに残る——能力 URL 方式の
+ * 唯一にして最大の弱点がここ。`redact.ts` は鍵の**名前**で消すので、
+ * パスの中に混ざった値は捕まえられない。
+ */
+export function safePath(path: string): string {
+  return path.startsWith('/mcp/') ? '/mcp/<redacted>' : path;
 }
 
 const MAX_BODY_BYTES = 16 * 1024;
@@ -81,6 +109,10 @@ function send(
 
 export function startMiniAppServer(options: MiniAppServerOptions): Server {
   const healthBody = JSON.stringify({ status: 'ok', version: options.version });
+  const mcpLimiter =
+    options.mcp === undefined
+      ? undefined
+      : new RateLimiter(options.mcp.ratePerMinute);
 
   const server = createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0] ?? '/';
@@ -105,6 +137,19 @@ export function startMiniAppServer(options: MiniAppServerOptions): Server {
           }
           send(res, 200, renderPage(), 'text/html; charset=utf-8');
           return;
+        }
+
+        // MCP（docs/mcp.md）。鍵が設定されていなければ素通りして 404。
+        if (path.startsWith('/mcp') && options.mcp !== undefined && mcpLimiter !== undefined) {
+          const handled = await handleMcpRequest(req, res, path, {
+            logger: options.logger,
+            version: options.version,
+            baseUrl: options.mcp.baseUrl,
+            data: options.mcp.data,
+            token: options.mcp.token,
+            rateLimiter: mcpLimiter,
+          });
+          if (handled) return;
         }
 
         // 仮名の音声。事前生成済みの静的ファイルで、秘密は含まない。
@@ -137,7 +182,7 @@ export function startMiniAppServer(options: MiniAppServerOptions): Server {
         if (!verified.ok) {
           options.logger.warn('mini app rejected an unverified request', {
             reason: verified.reason,
-            path,
+            path: safePath(path),
           });
           send(res, 401, JSON.stringify({ error: 'unauthorized' }), 'application/json');
           return;
@@ -154,7 +199,11 @@ export function startMiniAppServer(options: MiniAppServerOptions): Server {
         );
         send(res, 200, JSON.stringify(payload), 'application/json');
       } catch (error) {
-        options.logger.error('mini app request failed', { path, error });
+        // パスは均してから記録する。`/mcp/<token>` を生で残さない。
+        options.logger.error('mini app request failed', {
+          path: safePath(path),
+          error,
+        });
         send(res, 500, JSON.stringify({ error: 'internal' }), 'application/json');
       }
     })();

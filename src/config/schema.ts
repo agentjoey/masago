@@ -51,6 +51,17 @@ const envSchema = z.object({
    */
   MINIAPP_URL: z.string().url().optional(),
 
+  /**
+   * MCP 第二界面の鍵（docs/mcp.md 方案 A）。URL 自体が凭据になる。
+   *
+   * 未設定なら MCP は無効——開けない入口を置いても混乱するだけで、
+   * 空文字を鍵として受け入れると誰でも読めてしまう。
+   * 64 文字以上を要求する：短い鍵は総当たりで通る。
+   */
+  MCP_ACCESS_TOKEN: z.string().min(64).optional(),
+  /** MCP の毎分呼び出し上限。呼ぶのは人ではなく模型なので絞る（§9.1）。 */
+  MCP_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(30),
+
   // V2 は文字入力が主で、音声入力は範囲外（C4）。既定で無効。
   // 有効にするときは ffmpeg が要る——OGG/opus を STT が読める形に直すため。
   VOICE_INPUT_ENABLED: envBoolean(false),
@@ -196,6 +207,10 @@ export const configSchema = envSchema.transform((env) => ({
   server: {
     port: env.PORT,
     miniAppUrl: env.MINIAPP_URL,
+  },
+  mcp: {
+    accessToken: env.MCP_ACCESS_TOKEN,
+    ratePerMinute: env.MCP_RATE_LIMIT_PER_MINUTE,
   },
 }));
 

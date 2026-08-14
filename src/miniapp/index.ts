@@ -6,6 +6,7 @@ export {
   findLearnerId,
   loadCalendar,
   loadErrors,
+  loadItemState,
   loadKanaTable,
   loadProgress,
   markDueNow,

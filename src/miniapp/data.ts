@@ -327,3 +327,46 @@ export async function markDueNow(
     .returning({ id: reviewQueueTable.id });
   return updated.length > 0;
 }
+
+export interface ItemStateView {
+  readonly reps: number;
+  readonly lapses: number;
+  readonly nextReviewAt: string;
+  readonly state: string;
+}
+
+/**
+ * 一つの知識項の学習状態（MCP の `fetch` が使う）。
+ *
+ * 「辞書」と「この人の学習記録」を分けるのがこの一行——同じ語でも、
+ * 何回練習して次はいつか、は学習者ごとに違う。
+ */
+export async function loadItemState(
+  tx: Executor,
+  learnerId: string,
+  knowledgeKey: string,
+): Promise<ItemStateView | undefined> {
+  const rows = await tx
+    .select({ entry: reviewQueueTable })
+    .from(reviewQueueTable)
+    .innerJoin(
+      knowledgeItems,
+      eq(reviewQueueTable.knowledgeItemId, knowledgeItems.id),
+    )
+    .where(
+      and(
+        eq(reviewQueueTable.learnerId, learnerId),
+        eq(knowledgeItems.key, knowledgeKey),
+      ),
+    )
+    .limit(1);
+
+  const row = rows[0];
+  if (row === undefined) return undefined;
+  return {
+    reps: row.entry.reps,
+    lapses: row.entry.lapses,
+    nextReviewAt: row.entry.nextReviewAt.toISOString(),
+    state: row.entry.state,
+  };
+}

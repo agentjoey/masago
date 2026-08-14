@@ -81,6 +81,7 @@ function makeConfig(overrides?: {
       nightlyBackupLocalTime: '03:00',
     },
     budget: { dailyCostSoftLimitUsd: 1, monthlyCostSoftLimitUsd: 10 },
+    mcp: { accessToken: undefined, ratePerMinute: 30 },
     server: {
       port: 3000,
       miniAppUrl: undefined,

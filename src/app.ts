@@ -17,6 +17,8 @@ import { streakOf } from './curriculum/render.js';
 import * as learningEventsRepo from './db/repositories/learningEvents.js';
 import * as reviewQueueRepo from './db/repositories/reviewQueue.js';
 import { createKanaCommands } from './learning/kanaCommands.js';
+import { planKanaLesson } from './learning/kanaSession.js';
+import { planVocabSession } from './learning/vocabSession.js';
 import { ensureKanaSeeded } from './learning/kanaSeed.js';
 import { ensureVocabSeeded } from './learning/vocabSeed.js';
 import { ensureParticlesSeeded } from './learning/particleSeed.js';
@@ -37,6 +39,7 @@ import {
   loadCalendar,
   loadErrors,
   loadKanaTable,
+  loadItemState,
   loadProgress,
   loadReading,
   judgeReading,
@@ -493,6 +496,80 @@ const reportScheduler = createReportScheduler({
  * Mini App（V3）と健康確認を同じポートで出す。ruby 排版・進度・錯題本・
  * 復習日历は同じ後端から読む——別集計を作ると bot と数字が食い違う。
  */
+/**
+ * MCP 第二界面（docs/mcp.md 方案 A）。**読み取り専用**。
+ *
+ * 工具の中身は既存の集計をそのまま返す——別集計を作ると
+ * bot / Mini App / MCP で数字が食い違う。
+ *
+ * 鍵が未設定なら丸ごと出さない。
+ */
+const mcpBaseUrl = config.server.miniAppUrl ?? '';
+const mcpConfig =
+  config.mcp.accessToken === undefined
+    ? undefined
+    : {
+        token: config.mcp.accessToken,
+        ratePerMinute: config.mcp.ratePerMinute,
+        baseUrl: mcpBaseUrl,
+        data: {
+          progress: async () => {
+            const learnerId = await findLearnerId(db, config.telegram.allowedUserId);
+            if (learnerId === undefined) return null;
+            return loadProgress(db, learnerId, new Date(), config.session.userTimezone);
+          },
+          today: async () => {
+            const learnerId = await findLearnerId(db, config.telegram.allowedUserId);
+            if (learnerId === undefined) return null;
+            const now = new Date();
+            const plan = {
+              newPerDay: config.kana.newPerDay,
+              maxReviews: config.kana.maxReviews,
+              backlogThreshold: config.kana.backlogThreshold,
+            };
+            const kana = await planKanaLesson(db, learnerId, now, plan);
+            const vocab = await planVocabSession(db, learnerId, now, plan);
+            return {
+              newKana: kana.newKana.map((item) => item.hiragana),
+              kanaDue: kana.dueTotal,
+              newWords: vocab.newWords.map((item) => item.expression),
+              vocabDue: vocab.dueTotal,
+              stage: vocab.stage,
+              heldBackForBacklog:
+                kana.newHeldBackForBacklog || vocab.newHeldBackForBacklog,
+            };
+          },
+          errors: async (limit: number) => {
+            const learnerId = await findLearnerId(db, config.telegram.allowedUserId);
+            if (learnerId === undefined) return [];
+            const rows = await loadErrors(db, learnerId, limit);
+            return rows.map((row) => ({
+              id: row.id,
+              original: row.original,
+              recommended: row.recommended,
+              reason: row.reason,
+              knowledgeKey: row.knowledgeKey,
+              at: row.at,
+            }));
+          },
+          report: async (period: 'WEEK' | 'MONTH') =>
+            (await collectReportFacts(
+              {
+                executor: db,
+                telegramUserId: config.telegram.allowedUserId,
+                timeZone: config.session.userTimezone,
+              },
+              period,
+              new Date(),
+            )) ?? null,
+          itemState: async (knowledgeKey: string) => {
+            const learnerId = await findLearnerId(db, config.telegram.allowedUserId);
+            if (learnerId === undefined) return undefined;
+            return loadItemState(db, learnerId, knowledgeKey);
+          },
+        },
+      };
+
 const healthServer = startMiniAppServer({
   port: config.server.port,
   version: pkg.version,
@@ -500,6 +577,7 @@ const healthServer = startMiniAppServer({
   botToken: config.telegram.botToken,
   allowedTelegramUserId: config.telegram.allowedUserId,
   kanaAudioDir: config.kana.audioDir,
+  ...(mcpConfig === undefined ? {} : { mcp: mcpConfig }),
   handlers: {
     progress: async (telegramUserId) => {
       const learnerId = await findLearnerId(db, telegramUserId);

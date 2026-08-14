@@ -1,4 +1,6 @@
+import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { join } from 'node:path';
 import type { Logger } from '../observability/index.js';
 import { verifyInitData } from './auth.js';
 import { renderPage } from './page.js';
@@ -15,10 +17,16 @@ export interface MiniAppHandlers {
   progress(telegramUserId: number): Promise<unknown>;
   errors(telegramUserId: number): Promise<unknown>;
   calendar(telegramUserId: number): Promise<unknown>;
+  /** 五十音図と、各字の学習状態。 */
+  kana(telegramUserId: number): Promise<unknown>;
+  /** 「これをもう一度」。期日を今にする。 */
+  practice(telegramUserId: number, knowledgeKey: string): Promise<unknown>;
 }
 
 export interface MiniAppServerOptions {
   readonly port: number;
+  /** 事前生成した仮名音声の置き場。Mini App から直接再生する。 */
+  readonly kanaAudioDir: string;
   readonly version: string;
   readonly logger: Logger;
   readonly botToken: string;
@@ -87,6 +95,16 @@ export function startMiniAppServer(options: MiniAppServerOptions): Server {
           return;
         }
 
+        // 仮名の音声。事前生成済みの静的ファイルで、秘密は含まない。
+        if (path.startsWith('/audio/kana/')) {
+          if (method !== 'GET' && method !== 'HEAD') {
+            send(res, 405, '', 'text/plain');
+            return;
+          }
+          await serveKanaAudio(res, path, options);
+          return;
+        }
+
         const route = API_ROUTES[path];
         if (route === undefined) {
           send(res, 404, JSON.stringify({ error: 'not found' }), 'application/json');
@@ -117,7 +135,11 @@ export function startMiniAppServer(options: MiniAppServerOptions): Server {
           return;
         }
 
-        const payload = await route(options.handlers, verified.user.id);
+        const payload = await route(
+          options.handlers,
+          verified.user.id,
+          body as Record<string, unknown>,
+        );
         send(res, 200, JSON.stringify(payload), 'application/json');
       } catch (error) {
         options.logger.error('mini app request failed', { path, error });
@@ -135,9 +157,49 @@ export function startMiniAppServer(options: MiniAppServerOptions): Server {
 
 const API_ROUTES: Record<
   string,
-  (handlers: MiniAppHandlers, userId: number) => Promise<unknown>
+  (
+    handlers: MiniAppHandlers,
+    userId: number,
+    body: Record<string, unknown>,
+  ) => Promise<unknown>
 > = {
   '/api/progress': (handlers, userId) => handlers.progress(userId),
   '/api/errors': (handlers, userId) => handlers.errors(userId),
   '/api/calendar': (handlers, userId) => handlers.calendar(userId),
+  '/api/kana': (handlers, userId) => handlers.kana(userId),
+  '/api/practice': (handlers, userId, body) =>
+    handlers.practice(
+      userId,
+      typeof body['key'] === 'string' ? body['key'] : '',
+    ),
 };
+
+/** 仮名 id は英小文字のみ。これを緩めるとパスを遡られる。 */
+const KANA_ID = /^[a-z]{1,3}$/;
+
+async function serveKanaAudio(
+  res: ServerResponse,
+  path: string,
+  options: MiniAppServerOptions,
+): Promise<void> {
+  const name = path.slice('/audio/kana/'.length);
+  const id = name.endsWith('.mp3') ? name.slice(0, -4) : name;
+  // 厳しく検査する。`..` やスラッシュを通すと任意のファイルを読まれる。
+  if (!KANA_ID.test(id)) {
+    send(res, 404, '', 'text/plain');
+    return;
+  }
+  const file = join(options.kanaAudioDir, `${id}.mp3`);
+  try {
+    const bytes = await readFile(file);
+    res.writeHead(200, {
+      'content-type': 'audio/mpeg',
+      'content-length': String(bytes.byteLength),
+      // 音声は不変。長く持たせてよい。
+      'cache-control': 'public, max-age=31536000, immutable',
+    });
+    res.end(bytes);
+  } catch {
+    send(res, 404, '', 'text/plain');
+  }
+}

@@ -32,7 +32,9 @@ import {
   findLearnerId,
   loadCalendar,
   loadErrors,
+  loadKanaTable,
   loadProgress,
+  markDueNow,
   startMiniAppServer,
 } from './miniapp/index.js';
 import { createAnalyzer, crossCheck } from './nlp/index.js';
@@ -418,6 +420,7 @@ const healthServer = startMiniAppServer({
   logger,
   botToken: config.telegram.botToken,
   allowedTelegramUserId: config.telegram.allowedUserId,
+  kanaAudioDir: config.kana.audioDir,
   handlers: {
     progress: async (telegramUserId) => {
       const learnerId = await findLearnerId(db, telegramUserId);
@@ -428,6 +431,17 @@ const healthServer = startMiniAppServer({
       const learnerId = await findLearnerId(db, telegramUserId);
       if (learnerId === undefined) return [];
       return loadErrors(db, learnerId, 50);
+    },
+    kana: async (telegramUserId) => {
+      const learnerId = await findLearnerId(db, telegramUserId);
+      if (learnerId === undefined) return [];
+      return loadKanaTable(db, learnerId, new Date());
+    },
+    practice: async (telegramUserId, key) => {
+      const learnerId = await findLearnerId(db, telegramUserId);
+      if (learnerId === undefined) return { ok: false };
+      const ok = await markDueNow(db, learnerId, key, new Date());
+      return { ok };
     },
     calendar: async (telegramUserId) => {
       const learnerId = await findLearnerId(db, telegramUserId);

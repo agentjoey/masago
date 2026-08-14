@@ -40,6 +40,7 @@ async function start(handlers?: Partial<Record<string, () => Promise<unknown>>>)
   const server = startMiniAppServer({
     port: 0,
     version: '9.9.9',
+    kanaAudioDir: 'assets/kana-audio',
     logger: silentLogger,
     botToken: BOT_TOKEN,
     allowedTelegramUserId: USER_ID,
@@ -47,6 +48,11 @@ async function start(handlers?: Partial<Record<string, () => Promise<unknown>>>)
       progress: make('progress'),
       errors: make('errors'),
       calendar: make('calendar'),
+      kana: make('kana'),
+      practice: async (_userId, key) => {
+        calls.push(`practice:${key}`);
+        return { ok: true };
+      },
     },
   });
   await new Promise<void>((resolve) => server.once('listening', resolve));
@@ -147,10 +153,52 @@ describe('mini app server', () => {
 
   it('serves each api route', async () => {
     const { base, calls } = await start();
-    for (const path of ['/api/progress', '/api/errors', '/api/calendar']) {
+    for (const path of ['/api/progress', '/api/errors', '/api/calendar', '/api/kana']) {
       const res = await post(base, path, { initData: validInitData() });
       expect(res.status, path).toBe(200);
     }
-    expect(calls).toEqual(['progress', 'errors', 'calendar']);
+    expect(calls).toEqual(['progress', 'errors', 'calendar', 'kana']);
+  });
+
+  it('passes the item key through to practice', async () => {
+    const { base, calls } = await start();
+    const res = await post(base, '/api/practice', {
+      initData: validInitData(),
+      key: 'kana_a',
+    });
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(['practice:kana_a']);
+  });
+
+  describe('kana audio', () => {
+    it('serves a pre-generated clip', async () => {
+      const { base } = await start();
+      const res = await fetch(`${base}/audio/kana/a.mp3`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('audio/mpeg');
+      expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+    });
+
+    // ここを緩めると任意のファイルを読まれる。
+    it('refuses anything that is not a plain kana id', async () => {
+      const { base } = await start();
+      for (const path of [
+        '/audio/kana/..%2F..%2Fpackage.json',
+        '/audio/kana/../../package.json',
+        '/audio/kana/a%2F..%2Fb.mp3',
+        '/audio/kana/A.mp3',
+        '/audio/kana/toolongid.mp3',
+        '/audio/kana/.env',
+      ]) {
+        const res = await fetch(`${base}${path}`);
+        expect(res.status, path).toBe(404);
+      }
+    });
+
+    it('does not require auth for audio', async () => {
+      const { base, calls } = await start();
+      expect((await fetch(`${base}/audio/kana/ka.mp3`)).status).toBe(200);
+      expect(calls).toEqual([]);
+    });
   });
 });

@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, lte } from 'drizzle-orm';
+import { gojuonGrid } from '../curriculum/gojuon.js';
 import { kanaOfKey } from '../curriculum/kana.js';
 import { kanaProgress } from '../curriculum/lessonPlan.js';
 import {
@@ -12,6 +13,7 @@ import * as learnerProfiles from '../db/repositories/learnerProfiles.js';
 import * as reviewQueue from '../db/repositories/reviewQueue.js';
 import {
   detectedIssues,
+  knowledgeItems,
   learningEvents,
   reviewQueue as reviewQueueTable,
   sessions,
@@ -199,4 +201,129 @@ export async function findLearnerId(
 ): Promise<string | undefined> {
   const learner = await learnerProfiles.findByTelegramUserId(tx, telegramUserId);
   return learner?.id;
+}
+
+/** 一つの字／語の学習状態。表を光らせるのに使う。 */
+export interface ItemState {
+  readonly key: string;
+  readonly state: string;
+  readonly reps: number;
+  readonly lapses: number;
+  readonly dueAt: string;
+  readonly due: boolean;
+  /** 0–1。安定度から出す「どれくらい定着したか」。 */
+  readonly strength: number;
+}
+
+export interface KanaCell {
+  readonly id: string;
+  readonly hiragana: string;
+  readonly katakana: string;
+  readonly romaji: string;
+  readonly state: ItemState | null;
+}
+
+export interface KanaSection {
+  readonly group: string;
+  readonly title: string;
+  readonly columns: readonly string[];
+  readonly rows: readonly { row: string; cells: readonly (KanaCell | null)[] }[];
+}
+
+/**
+ * 安定度を 0–1 に均す。
+ *
+ * FSRS の stability は日数で、上限が無い。棒や濃淡に使うには
+ * 「そろそろ確か」と言える所で頭打ちにしたい。30 日覚えていられれば
+ * 十分定着とみなす。
+ */
+function strengthOf(stabilityDays: number): number {
+  return Math.max(0, Math.min(1, stabilityDays / 30));
+}
+
+export async function loadKanaTable(
+  tx: Executor,
+  learnerId: string,
+  now: Date,
+): Promise<KanaSection[]> {
+  const rows = await tx
+    .select({ entry: reviewQueueTable, key: knowledgeItems.key })
+    .from(reviewQueueTable)
+    .innerJoin(
+      knowledgeItems,
+      eq(reviewQueueTable.knowledgeItemId, knowledgeItems.id),
+    )
+    .where(
+      and(
+        eq(reviewQueueTable.learnerId, learnerId),
+        eq(knowledgeItems.type, 'KANA'),
+      ),
+    );
+
+  const byKanaId = new Map<string, ItemState>();
+  for (const row of rows) {
+    const kana = kanaOfKey(row.key);
+    if (kana === undefined) continue;
+    byKanaId.set(kana.id, {
+      key: row.key,
+      state: row.entry.state,
+      reps: row.entry.reps,
+      lapses: row.entry.lapses,
+      dueAt: row.entry.nextReviewAt.toISOString(),
+      due: row.entry.nextReviewAt.getTime() <= now.getTime(),
+      strength: strengthOf(row.entry.stability),
+    });
+  }
+
+  return gojuonGrid().map((section) => ({
+    group: section.group,
+    title: section.title,
+    columns: [...section.columns],
+    rows: section.rows.map((row) => ({
+      row: row.row,
+      cells: row.cells.map((kana) =>
+        kana === undefined
+          ? null
+          : {
+              id: kana.id,
+              hiragana: kana.hiragana,
+              katakana: kana.katakana,
+              romaji: kana.romaji,
+              state: byKanaId.get(kana.id) ?? null,
+            },
+      ),
+    })),
+  }));
+}
+
+/**
+ * 「これをもう一度やりたい」。期日を今にするだけで、FSRS の履歴は壊さない。
+ *
+ * 状態や安定度まで初期化すると、それまでの復習が無かったことになる。
+ * 学習者が求めているのは「今出して」であって「忘れたことにして」ではない。
+ */
+export async function markDueNow(
+  tx: Executor,
+  learnerId: string,
+  knowledgeKey: string,
+  now: Date,
+): Promise<boolean> {
+  const [item] = await tx
+    .select({ id: knowledgeItems.id })
+    .from(knowledgeItems)
+    .where(eq(knowledgeItems.key, knowledgeKey))
+    .limit(1);
+  if (item === undefined) return false;
+
+  const updated = await tx
+    .update(reviewQueueTable)
+    .set({ nextReviewAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(reviewQueueTable.learnerId, learnerId),
+        eq(reviewQueueTable.knowledgeItemId, item.id),
+      ),
+    )
+    .returning({ id: reviewQueueTable.id });
+  return updated.length > 0;
 }

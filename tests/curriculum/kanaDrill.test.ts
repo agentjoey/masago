@@ -450,8 +450,11 @@ describe('renderDaily', () => {
     kanaDue: 0,
     newWords: [] as never[],
     vocabDue: 0,
+    grammarDue: 0,
+    newParticles: [] as never[],
     kanaProgress: { introduced: 46, total: 104 },
     vocabProgress: { introduced: 10, total: 671 },
+    grammarProgress: { introduced: 0, total: 12 },
     heldBack: false,
   };
 
@@ -477,6 +480,53 @@ describe('renderDaily', () => {
     const text = renderDaily(base);
     expect(text).toContain('46/104');
     expect(text).toContain('10/671');
+  });
+
+  /**
+   * 助詞は FSRS で排程されているのに /today が触れていなかった。
+   * 期限が来たことに気づく手立てが無く、/write を自分で思い出すしかない。
+   */
+  it('surfaces due particles and points at /write', () => {
+    const text = renderDaily({ ...base, grammarDue: 3 });
+    expect(text).toContain('助词复习 3 个');
+    expect(text).toContain('/write');
+    expect(text).not.toContain('今天没有到期的内容');
+  });
+
+  it('names the new particles the way it names new kana', () => {
+    const text = renderDaily({
+      ...base,
+      newParticles: [
+        { id: 'wa', surface: 'は', reading: 'wa', label: '主题', blankable: 1950 },
+        { id: 'wo', surface: 'を', reading: 'o', label: '宾语', blankable: 846 },
+      ] as never,
+    });
+    expect(text).toContain('新助词 2 个');
+    // 読みが表記と違う三つは、ここで気づける形にしておく
+    expect(text).toContain('は(wa)');
+    expect(text).toContain('を(o)');
+  });
+
+  /** 助詞をまだ始めていない段階で 0/12 を突きつけない（語彙と同じ）。 */
+  it('hides the particle progress line before the learner starts', () => {
+    expect(renderDaily(base)).not.toContain('助词 0/12');
+    expect(renderDaily({ ...base, grammarProgress: { introduced: 4, total: 12 } }))
+      .toContain('助词 4/12');
+  });
+
+  /**
+   * 案内は「今日やることがある入口」だけ。全部並べるとどれを押せば
+   * いいのか分からない。
+   */
+  it('only offers the entries that have something to do', () => {
+    const onlyKana = renderDaily({ ...base, kanaDue: 5 });
+    expect(onlyKana).toContain('/kana');
+    expect(onlyKana).not.toContain('/vocab');
+    expect(onlyKana).not.toContain('/write');
+
+    const onlyGrammar = renderDaily({ ...base, grammarDue: 2 });
+    expect(onlyGrammar).toContain('/write');
+    expect(onlyGrammar).not.toContain('/kana 练假名');
   });
 });
 

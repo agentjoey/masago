@@ -391,6 +391,16 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         ...lessonOptions,
         newPerDay: await remainingNewToday(learnerId, now, 'VOCABULARY'),
       });
+      // 助詞も課程の一部。語彙がまだなら助詞も出さない——文が読めない
+      // 段階で助詞だけ覚えても、入れる場所が分からず記号の暗記になる
+      // （/write 本体と同じ判断）。
+      const writing =
+        vocab.stage === 'S0_KANA_ONLY'
+          ? { newParticles: [], dueTotal: 0, progress: { introduced: 0, total: 0 } }
+          : await planWritingSession(executor, learnerId, now, {
+              newPerDay: await remainingNewToday(learnerId, now, 'GRAMMAR'),
+              maxReviews: deps.maxReviews,
+            });
       return [
         {
           text: renderDaily({
@@ -399,8 +409,11 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
             kanaDue: kana.dueTotal,
             newWords: vocab.newWords,
             vocabDue: vocab.dueTotal,
+            grammarDue: writing.dueTotal,
+            newParticles: writing.newParticles,
             kanaProgress: kana.progress,
             vocabProgress: vocab.progress,
+            grammarProgress: writing.progress,
             heldBack: kana.newHeldBackForBacklog || vocab.newHeldBackForBacklog,
           }),
         },

@@ -252,8 +252,13 @@ export interface DailySummary {
   readonly kanaDue: number;
   readonly newWords: readonly VocabEntry[];
   readonly vocabDue: number;
+  /** 期限の来た助詞。/write へ誘導するのに要る。 */
+  readonly grammarDue: number;
+  /** 今日これから教える助詞。 */
+  readonly newParticles: readonly Particle[];
   readonly kanaProgress: { introduced: number; total: number };
   readonly vocabProgress: { introduced: number; total: number };
+  readonly grammarProgress: { introduced: number; total: number };
   readonly heldBack: boolean;
 }
 
@@ -285,21 +290,57 @@ export function renderDaily(summary: DailySummary): string {
   if (summary.vocabDue > 0) {
     lines.push(`单词复习 ${String(summary.vocabDue)} 个`);
   }
-  if (
+  // 助詞も課程の一部。ここに出さないと、期限が来ていることに
+  // 気づく手立てが無い——/write を自分で思い出すしかなかった。
+  if (summary.newParticles.length > 0) {
+    lines.push(`新助词 ${String(summary.newParticles.length)} 个`);
+    lines.push(
+      `  ${summary.newParticles.map((p) => `${p.surface}(${p.reading})`).join('  ')}`,
+    );
+  }
+  if (summary.grammarDue > 0) {
+    lines.push(`助词复习 ${String(summary.grammarDue)} 个`);
+  }
+
+  const nothingToDo =
     summary.newKana.length === 0 &&
     summary.newWords.length === 0 &&
+    summary.newParticles.length === 0 &&
     summary.kanaDue === 0 &&
-    summary.vocabDue === 0
-  ) {
+    summary.vocabDue === 0 &&
+    summary.grammarDue === 0;
+  if (nothingToDo) {
     lines.push(summary.heldBack ? '复习积压较多，先追平。' : '今天没有到期的内容。');
   }
 
   lines.push('');
-  lines.push(
-    `五十音 ${String(summary.kanaProgress.introduced)}/${String(summary.kanaProgress.total)}　単語 ${String(summary.vocabProgress.introduced)}/${String(summary.vocabProgress.total)}`,
-  );
+  const progress = [
+    `五十音 ${String(summary.kanaProgress.introduced)}/${String(summary.kanaProgress.total)}`,
+    `単語 ${String(summary.vocabProgress.introduced)}/${String(summary.vocabProgress.total)}`,
+  ];
+  // 助詞はまだ始めていない段階では出さない。0/12 と並べても
+  // 今日やることは変わらない（語彙の行と同じ考え方）。
+  if (summary.grammarProgress.introduced > 0 || summary.grammarDue > 0) {
+    progress.push(
+      `助词 ${String(summary.grammarProgress.introduced)}/${String(summary.grammarProgress.total)}`,
+    );
+  }
+  lines.push(progress.join('　'));
   lines.push('');
-  lines.push('/kana 练假名　/vocab 练单词　/review 只复习');
+  // 案内は「今日やることがある入口」だけ出す。全部並べると
+  // どれを押せばいいのか分からない。
+  const entries: string[] = [];
+  if (summary.newKana.length > 0 || summary.kanaDue > 0) {
+    entries.push('/kana 练假名');
+  }
+  if (summary.newWords.length > 0 || summary.vocabDue > 0) {
+    entries.push('/vocab 练单词');
+  }
+  if (summary.newParticles.length > 0 || summary.grammarDue > 0) {
+    entries.push('/write 练助词');
+  }
+  entries.push('/review 只复习');
+  lines.push(entries.join('　'));
   return lines.join('\n');
 }
 

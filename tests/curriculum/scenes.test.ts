@@ -206,3 +206,43 @@ describe('場面で絞った出題', () => {
     expect(next).toBeDefined();
   });
 });
+
+describe('進度の分母は一箇所から', () => {
+  /**
+   * 実機で Mini App が 1301、週報が 1374 と違う数字を出していた。
+   * 原因は片方が `VOCAB.length` を直接使っていたこと——接尾辞
+   * （`～円`『～分』など）は単独では教えないので分母に入らない。
+   *
+   * 数え方を二箇所に書くと必ずずれる。ここで固定する。
+   */
+  it('never counts affixes as teachable vocabulary', async () => {
+    const { vocabProgress } = await import('../../src/curriculum/stage.js');
+    const { VOCAB } = await import('../../src/curriculum/vocab.js');
+    const teachable = vocabProgress([]).total;
+    const affixes = VOCAB.filter((entry) => entry.isAffix === true).length;
+    expect(affixes).toBeGreaterThan(0);
+    expect(teachable).toBe(VOCAB.length - affixes);
+  });
+
+  it('gives the report and the mini app the same denominator', async () => {
+    const { vocabProgress } = await import('../../src/curriculum/stage.js');
+    // loadProgress（Mini App）も collectReportFacts（週報）も
+    // この一つの関数を通ること。直接 VOCAB.length を読んでいないか、
+    // ソースを見て確かめる。
+    const { readFileSync } = await import('node:fs');
+    // 註釈は外してから見る。「使ってはいけない」と書いた文まで拾って
+    // しまうと、規則を説明できなくなる。
+    const stripComments = (source: string): string =>
+      source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    for (const path of [
+      'src/miniapp/data.ts',
+      'src/learning/reportFacts.ts',
+    ]) {
+      const code = stripComments(readFileSync(path, 'utf8'));
+      expect(code, `${path} 内で VOCAB.length を直接使っている`).not.toMatch(
+        /VOCAB\.length/,
+      );
+    }
+    expect(vocabProgress([]).total).toBeGreaterThan(1000);
+  });
+});

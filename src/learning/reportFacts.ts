@@ -8,7 +8,8 @@ import {
   type ReportTrouble,
 } from '../curriculum/report.js';
 import { streakOf } from '../curriculum/render.js';
-import { VOCAB, vocabOfKey } from '../curriculum/vocab.js';
+import { vocabOfKey } from '../curriculum/vocab.js';
+import { vocabProgress } from '../curriculum/stage.js';
 import type { Executor } from '../db/repositories/executor.js';
 import * as learnerProfiles from '../db/repositories/learnerProfiles.js';
 import * as learningEvents from '../db/repositories/learningEvents.js';
@@ -132,6 +133,21 @@ export async function collectReportFacts(
     return keys.filter((key) => resolve(key) !== undefined).length;
   };
 
+  /**
+   * 語彙の分母は `vocabProgress` から採る。
+   *
+   * `VOCAB.length` を直接使ってはいけない——接尾辞（`～円`『～分』など
+   * 73 件）は単独では教えないので、進度の分母には入らない。数え方を
+   * 二箇所に書いた結果、Mini App が 1301、週報が 1374 と**違う数字を
+   * 出していた**（実機で発覚）。数え方は一箇所に置く。
+   */
+  const vocabIds = (
+    await reviewQueue.listIntroducedKeys(deps.executor, learner.id, 'VOCABULARY')
+  )
+    .map((key) => vocabOfKey(key)?.id)
+    .filter((id): id is string => id !== undefined);
+  const vocab = vocabProgress(vocabIds);
+
   return {
     period,
     span: spanLabel(since, now, deps.timeZone),
@@ -146,10 +162,7 @@ export async function collectReportFacts(
         introduced: await introducedOf('KANA', kanaOfKey),
         total: KANA.length,
       },
-      vocab: {
-        introduced: await introducedOf('VOCABULARY', vocabOfKey),
-        total: VOCAB.length,
-      },
+      vocab,
       grammar: {
         introduced: await introducedOf('GRAMMAR', particleOfKey),
         total: PARTICLES.length,

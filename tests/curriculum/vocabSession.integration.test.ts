@@ -173,3 +173,49 @@ describe.skipIf(!HAS_DB)('S1 vocabulary session', () => {
     ).rejects.toThrow(/not seeded/);
   });
 });
+
+describe.skipIf(!HAS_DB)('vocabulary metadata upkeep', () => {
+  // 冪等な seed は「無い行を足す」だけなので、後から項目を増やしても
+  // 既存行は古いまま残る。実測で N4 を足したとき、先に入っていた N5 の
+  // 717 行に level が付いていなかった。黙って古いままにしない。
+  it('repairs metadata that predates a new field', { timeout: 180000 }, async () => {
+    const { db, schema, vocabSeed } = need();
+    const { vocabKey } = await import('../../src/curriculum/vocab.js');
+    const key = vocabKey('今#いま');
+
+    // 古い形（level 無し）に戻す
+    await db
+      .update(schema.knowledgeItems)
+      .set({ metadata: { expression: '今', reading: 'いま', meaning: 'now' } })
+      .where(eq(schema.knowledgeItems.key, key));
+
+    const result = await vocabSeed.ensureVocabSeeded(db);
+    expect(result.repaired).toBeGreaterThanOrEqual(1);
+
+    const [row] = await db
+      .select()
+      .from(schema.knowledgeItems)
+      .where(eq(schema.knowledgeItems.key, key));
+    expect((row?.metadata as Record<string, unknown>)['level']).toBe('N5');
+  });
+
+  it('repairs nothing when everything is current', { timeout: 120000 }, async () => {
+    const { db, vocabSeed } = need();
+    await vocabSeed.ensureVocabSeeded(db);
+    const again = await vocabSeed.ensureVocabSeeded(db);
+    expect(again.repaired).toBe(0);
+    expect(again.inserted).toBe(0);
+  });
+
+  it('carries both levels', { timeout: 120000 }, async () => {
+    const { db, schema } = need();
+    const rows = await db
+      .select({ metadata: schema.knowledgeItems.metadata })
+      .from(schema.knowledgeItems)
+      .where(eq(schema.knowledgeItems.type, 'VOCABULARY'));
+    const levels = new Set(
+      rows.map((r) => (r.metadata as Record<string, unknown>)['level']),
+    );
+    expect(levels).toEqual(new Set(['N5', 'N4']));
+  });
+});

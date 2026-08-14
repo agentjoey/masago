@@ -15,7 +15,7 @@ import {
   type Random,
 } from '../curriculum/quiz.js';
 import type { ReviewOutcome } from '../curriculum/review.js';
-import { VOCAB_N5_BY_ID } from '../curriculum/vocabN5.js';
+import { VOCAB_BY_ID } from '../curriculum/vocab.js';
 import type { Executor } from '../db/repositories/executor.js';
 import * as reviewQueue from '../db/repositories/reviewQueue.js';
 import { recordKanaAnswer } from './kanaSession.js';
@@ -309,7 +309,7 @@ export function decodeVocabAnswer(
   if (parts.length !== 3 || parts[0] !== 'vq') return undefined;
   const [, targetId, chosenId] = parts;
   if (targetId === undefined || chosenId === undefined) return undefined;
-  if (!VOCAB_N5_BY_ID.has(targetId) || !VOCAB_N5_BY_ID.has(chosenId)) {
+  if (!VOCAB_BY_ID.has(targetId) || !VOCAB_BY_ID.has(chosenId)) {
     return undefined;
   }
   return { targetId, chosenId };
@@ -324,7 +324,7 @@ export function decodeVocabAnswer(
  */
 export function targetOfVocabQuestionText(text: string): string | undefined {
   const byMeaning = new Map<string, string>();
-  for (const entry of VOCAB_N5_BY_ID.values()) {
+  for (const entry of VOCAB_BY_ID.values()) {
     if (!byMeaning.has(entry.meaning)) byMeaning.set(entry.meaning, entry.id);
   }
   for (const line of text.split('\n')) {

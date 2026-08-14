@@ -1,13 +1,20 @@
 import { kanaOfKey } from '../curriculum/kana.js';
 import {
+  currentVocabLevel,
   planVocabLesson,
   stageOf,
+  vocabProgressByLevel,
   teachesVocab,
   vocabProgress,
   type Stage,
   type VocabPlan,
 } from '../curriculum/stage.js';
-import { VOCAB_N5_BY_ID, vocabOfKey, type VocabEntry } from '../curriculum/vocabN5.js';
+import {
+  VOCAB_BY_ID,
+  vocabOfKey,
+  type JlptLevel,
+  type VocabEntry,
+} from '../curriculum/vocab.js';
 import {
   buildVocabQuestion,
   isCorrectVocabAnswer,
@@ -37,6 +44,9 @@ export interface VocabLessonOptions {
 
 export interface VocabLesson extends VocabPlan {
   readonly stage: Stage;
+  /** いま取り組んでいる等級。 */
+  readonly level: JlptLevel;
+  readonly levelProgress: { introduced: number; total: number };
   readonly pool: readonly VocabEntry[];
   readonly progress: { introduced: number; total: number };
   readonly dueTotal: number;
@@ -94,9 +104,14 @@ export async function planVocabSession(
     ...plan,
     stage,
     pool: introduced
-      .map((id) => VOCAB_N5_BY_ID.get(id))
+      .map((id) => VOCAB_BY_ID.get(id))
       .filter((entry): entry is VocabEntry => entry !== undefined),
     progress: vocabProgress(introduced),
+    level: currentVocabLevel(introduced),
+    levelProgress: vocabProgressByLevel(
+      introduced,
+      currentVocabLevel(introduced),
+    ),
     dueTotal,
   };
 }
@@ -154,7 +169,7 @@ export async function nextVocabQuestion(
 
   const introduced = await introducedVocabIds(tx, learnerId);
   const pool = introduced
-    .map((id) => VOCAB_N5_BY_ID.get(id))
+    .map((id) => VOCAB_BY_ID.get(id))
     .filter((item): item is VocabEntry => item !== undefined);
 
   const typed = isVocabTypedTier(first.entry.reps);
@@ -202,7 +217,7 @@ export async function gradeVocabChoice(
   requestRetention: number,
   responseMs?: number,
 ): Promise<GradedVocab> {
-  const target = VOCAB_N5_BY_ID.get(targetId);
+  const target = VOCAB_BY_ID.get(targetId);
   if (target === undefined) throw new Error(`unknown vocab ${targetId}`);
   const correct = isCorrectVocabAnswer(targetId, chosenId);
   const outcome: ReviewOutcome = correct
@@ -224,7 +239,7 @@ export async function gradeVocabChoice(
   return {
     correct,
     target,
-    chosen: VOCAB_N5_BY_ID.get(chosenId),
+    chosen: VOCAB_BY_ID.get(chosenId),
     applied,
   };
 }
@@ -238,7 +253,7 @@ export async function gradeVocabTyped(
   requestRetention: number,
   responseMs?: number,
 ): Promise<GradedVocab> {
-  const target = VOCAB_N5_BY_ID.get(targetId);
+  const target = VOCAB_BY_ID.get(targetId);
   if (target === undefined) throw new Error(`unknown vocab ${targetId}`);
   const correct = isCorrectVocabTyped(targetId, typed);
   const outcome: ReviewOutcome = correct

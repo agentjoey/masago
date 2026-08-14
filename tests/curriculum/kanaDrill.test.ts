@@ -9,7 +9,7 @@ import {
   tierFor,
 } from '../../src/learning/kanaDrill.js';
 import { isCorrectAnswer } from '../../src/curriculum/quiz.js';
-import { VOCAB_N5_BY_ID } from '../../src/curriculum/vocabN5.js';
+import { VOCAB_BY_ID } from '../../src/curriculum/vocab.js';
 import {
   renderActivity,
   renderCost,
@@ -394,9 +394,23 @@ describe('renderFullProgress', () => {
   it('shows both once vocabulary has begun', () => {
     const text = renderFullProgress({ kana, vocab, showVocab: true });
     expect(text).toContain('五十音');
-    expect(text).toContain('N5 单词');
+    expect(text).toContain('单词');
     expect(text).toContain('46/104');
     expect(text).toContain('15/671');
+  });
+
+  // 合計だけだと「1375 のうち 90」で、いまどの等級のどこかが分からない。
+  it('shows where the learner is inside the current level', () => {
+    const text = renderFullProgress({
+      kana,
+      vocab: { ...vocab, total: 1329 },
+      showVocab: true,
+      vocabLevel: 'N5',
+      levelProgress: { introduced: 15, total: 671 },
+    });
+    expect(text).toContain('N5 单词');
+    expect(text).toContain('N5 15/671');
+    expect(text).toContain('合计 15/1329');
   });
 
   it('keeps every bar the same width', () => {
@@ -425,7 +439,7 @@ describe('renderFullProgress', () => {
 describe('renderDaily', () => {
   const wordsOf = (ids: string[]) =>
     ids.map((id) => {
-      const found = VOCAB_N5_BY_ID.get(id);
+      const found = VOCAB_BY_ID.get(id);
       if (found === undefined) throw new Error(`unknown ${id}`);
       return found;
     });

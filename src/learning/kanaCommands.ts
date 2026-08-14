@@ -17,7 +17,7 @@ import {
   type CostView,
 } from '../curriculum/render.js';
 import type { Random } from '../curriculum/quiz.js';
-import { vocabOfKey } from '../curriculum/vocabN5.js';
+import { vocabOfKey } from '../curriculum/vocab.js';
 import type { Executor } from '../db/repositories/executor.js';
 import * as learnerProfiles from '../db/repositories/learnerProfiles.js';
 import * as learningEvents from '../db/repositories/learningEvents.js';
@@ -364,8 +364,10 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
           dueNow: vocab.dueTotal,
           mastered: masteredVocab,
         },
-        // 語彙を始めていない段階で 0/671 を突きつけない。
+        // 語彙を始めていない段階で総数を突きつけない。
         showVocab: vocab.stage !== 'S0_KANA_ONLY',
+        vocabLevel: vocab.level,
+        levelProgress: vocab.levelProgress,
       });
 
       return [

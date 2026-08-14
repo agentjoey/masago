@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { VOCAB_N5, VOCAB_N5_BY_ID, type VocabEntry } from '../../src/curriculum/vocabN5.js';
+import { VOCAB, VOCAB_BY_ID, type VocabEntry } from '../../src/curriculum/vocab.js';
 import {
   buildVocabQuestion,
   isCorrectVocabAnswer,
@@ -16,7 +16,7 @@ function seeded(seed: number): () => number {
 }
 
 function word(id: string): VocabEntry {
-  const found = VOCAB_N5_BY_ID.get(id);
+  const found = VOCAB_BY_ID.get(id);
   if (found === undefined) throw new Error(`unknown vocab ${id}`);
   return found;
 }
@@ -56,14 +56,14 @@ describe('buildVocabQuestion', () => {
     expect(q.promptReading).toBeUndefined();
     expect(q.prompt).toBe('now');
     for (const option of q.options) {
-      expect(option.label).toBe(VOCAB_N5_BY_ID.get(option.vocabId)?.expression);
+      expect(option.label).toBe(VOCAB_BY_ID.get(option.vocabId)?.expression);
     }
   });
 
   // 青 と 青い はどちらも "blue"。同じ問題に並べたら答えが二つになる。
   it('never offers two options that mean the same thing', () => {
     for (const kind of KINDS) {
-      for (const target of VOCAB_N5.slice(0, 250)) {
+      for (const target of VOCAB.slice(0, 250)) {
         for (let seed = 1; seed <= 2; seed += 1) {
           const q = buildVocabQuestion(target, {
             kind,
@@ -117,7 +117,7 @@ describe('buildVocabQuestion', () => {
       });
       for (const option of q.options) {
         if (option.vocabId === target.id) continue;
-        seen.add(VOCAB_N5_BY_ID.get(option.vocabId)?.genkiLesson);
+        seen.add(VOCAB_BY_ID.get(option.vocabId)?.genkiLesson);
       }
     }
     expect(seen.has(target.genkiLesson)).toBe(true);
@@ -125,7 +125,7 @@ describe('buildVocabQuestion', () => {
 
   it('never offers an affix as a distractor', () => {
     const affixIds = new Set(
-      VOCAB_N5.filter((entry) => entry.isAffix === true).map((e) => e.id),
+      VOCAB.filter((entry) => entry.isAffix === true).map((e) => e.id),
     );
     for (let seed = 1; seed <= 40; seed += 1) {
       const q = buildVocabQuestion(word('今#いま'), {
@@ -140,7 +140,7 @@ describe('buildVocabQuestion', () => {
   });
 
   it('draws only from the taught pool', () => {
-    const taught = VOCAB_N5.slice(0, 12);
+    const taught = VOCAB.slice(0, 12);
     for (let seed = 1; seed <= 20; seed += 1) {
       const q = buildVocabQuestion(taught[0] as VocabEntry, {
         kind: 'WORD_TO_MEANING',
@@ -155,7 +155,7 @@ describe('buildVocabQuestion', () => {
   });
 
   it('degrades gracefully when the pool is tiny', () => {
-    const taught = VOCAB_N5.slice(0, 2);
+    const taught = VOCAB.slice(0, 2);
     const q = buildVocabQuestion(taught[0] as VocabEntry, {
       kind: 'WORD_TO_MEANING',
       optionCount: 4,

@@ -8,7 +8,7 @@ import {
   teachesVocab,
   vocabProgress,
 } from '../../src/curriculum/stage.js';
-import { VOCAB_N5 } from '../../src/curriculum/vocabN5.js';
+import { VOCAB } from '../../src/curriculum/vocab.js';
 
 const BASE = {
   introducedIds: [] as string[],
@@ -53,7 +53,7 @@ describe('planVocabLesson', () => {
   });
 
   it('moves on once the first words are known', () => {
-    const known = VOCAB_N5.slice(0, 3).map((entry) => entry.id);
+    const known = VOCAB.slice(0, 3).map((entry) => entry.id);
     const plan = planVocabLesson({ ...BASE, introducedIds: known });
     for (const word of plan.newWords) {
       expect(known).not.toContain(word.id);
@@ -62,11 +62,11 @@ describe('planVocabLesson', () => {
 
   // 「～円」という単語がある、と覚えられると後で解くのが面倒。
   it('never introduces an affix as a standalone word', () => {
-    const affixIds = VOCAB_N5.filter((entry) => entry.isAffix === true).map(
+    const affixIds = VOCAB.filter((entry) => entry.isAffix === true).map(
       (entry) => entry.id,
     );
     // 接辞が先頭に来る位置まで進めてもなお出さない
-    const introduced = VOCAB_N5.filter((entry) => entry.isAffix !== true)
+    const introduced = VOCAB.filter((entry) => entry.isAffix !== true)
       .slice(0, 200)
       .map((entry) => entry.id);
     const plan = planVocabLesson({ ...BASE, introducedIds: introduced });
@@ -76,7 +76,7 @@ describe('planVocabLesson', () => {
   });
 
   it('caps reviews and returns them in the order given', () => {
-    const dueIds = VOCAB_N5.slice(0, 30).map((entry) => entry.id);
+    const dueIds = VOCAB.slice(0, 30).map((entry) => entry.id);
     const plan = planVocabLesson({ ...BASE, dueIds, maxReviews: 8 });
     expect(plan.reviewWords).toHaveLength(8);
     expect(plan.reviewWords[0]?.id).toBe(dueIds[0]);
@@ -89,7 +89,7 @@ describe('planVocabLesson', () => {
 
   // 復習が溜まったまま新語を足すと、雪だるまになって続かなくなる。
   it('holds back new words when the backlog is deep', () => {
-    const dueIds = VOCAB_N5.slice(0, 25).map((entry) => entry.id);
+    const dueIds = VOCAB.slice(0, 25).map((entry) => entry.id);
     const plan = planVocabLesson({ ...BASE, dueIds, backlogThreshold: 20 });
     expect(plan.newWords).toEqual([]);
     expect(plan.newHeldBackForBacklog).toBe(true);
@@ -97,7 +97,7 @@ describe('planVocabLesson', () => {
   });
 
   it('measures the backlog before the display cap', () => {
-    const dueIds = VOCAB_N5.slice(0, 40).map((entry) => entry.id);
+    const dueIds = VOCAB.slice(0, 40).map((entry) => entry.id);
     const plan = planVocabLesson({
       ...BASE,
       dueIds,
@@ -109,7 +109,7 @@ describe('planVocabLesson', () => {
   });
 
   it('introduces nothing once the whole list is known', () => {
-    const all = VOCAB_N5.map((entry) => entry.id);
+    const all = VOCAB.map((entry) => entry.id);
     expect(planVocabLesson({ ...BASE, introducedIds: all }).newWords).toEqual(
       [],
     );
@@ -120,18 +120,18 @@ describe('vocabProgress', () => {
   it('counts against the teachable words, not the affixes', () => {
     const progress = vocabProgress([]);
     expect(progress.introduced).toBe(0);
-    expect(progress.total).toBeLessThan(VOCAB_N5.length);
+    expect(progress.total).toBeLessThan(VOCAB.length);
     expect(progress.total).toBeGreaterThan(600);
   });
 
   it('counts what has been introduced', () => {
-    const teachable = VOCAB_N5.filter((entry) => entry.isAffix !== true);
+    const teachable = VOCAB.filter((entry) => entry.isAffix !== true);
     const ids = teachable.slice(0, 7).map((entry) => entry.id);
     expect(vocabProgress(ids).introduced).toBe(7);
   });
 
   it('does not count an affix even if it somehow got introduced', () => {
-    const affix = VOCAB_N5.find((entry) => entry.isAffix === true);
+    const affix = VOCAB.find((entry) => entry.isAffix === true);
     expect(affix).toBeDefined();
     if (affix === undefined) return;
     expect(vocabProgress([affix.id]).introduced).toBe(0);

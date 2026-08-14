@@ -6,7 +6,7 @@
  */
 import type { Random } from './quiz.js';
 export type { Random };
-import { VOCAB_N5, VOCAB_N5_BY_ID, type VocabEntry } from './vocabN5.js';
+import { VOCAB, VOCAB_BY_ID, type VocabEntry } from './vocab.js';
 
 export type VocabQuestionKind =
   /** 語を見せて意味を選ばせる。 */
@@ -42,7 +42,7 @@ function primarySense(meaning: string): string {
 }
 
 const BY_SENSE = new Map<string, VocabEntry[]>();
-for (const entry of VOCAB_N5) {
+for (const entry of VOCAB) {
   const sense = primarySense(entry.meaning);
   BY_SENSE.set(sense, [...(BY_SENSE.get(sense) ?? []), entry]);
 }
@@ -118,7 +118,7 @@ export function buildVocabQuestion(
   target: VocabEntry,
   options: BuildVocabQuestionOptions,
 ): VocabQuestion {
-  const pool = options.pool ?? VOCAB_N5;
+  const pool = options.pool ?? VOCAB;
   const excluded = indistinguishableFrom(target);
   const tiers = distractorTiers(target, pool, excluded);
 
@@ -178,7 +178,7 @@ export function isCorrectVocabAnswer(
   targetId: string,
   chosenId: string,
 ): boolean {
-  const target = VOCAB_N5_BY_ID.get(targetId);
+  const target = VOCAB_BY_ID.get(targetId);
   if (target === undefined) return false;
   if (chosenId === targetId) return true;
   return indistinguishableFrom(target).has(chosenId);
@@ -191,7 +191,7 @@ export function isCorrectVocabAnswer(
  * 「今」と打っても「いま」と打っても、その語を知っていることに変わりはない。
  */
 export function isCorrectVocabTyped(targetId: string, typed: string): boolean {
-  const target = VOCAB_N5_BY_ID.get(targetId);
+  const target = VOCAB_BY_ID.get(targetId);
   if (target === undefined) return false;
   const normalized = typed.trim();
   if (normalized === '') return false;

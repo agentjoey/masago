@@ -6,7 +6,7 @@
  */
 import type { Kana } from './kana.js';
 import type { QuizQuestion } from './quiz.js';
-import type { VocabEntry } from './vocabN5.js';
+import type { VocabEntry } from './vocab.js';
 import type { VocabQuestion } from './vocabQuiz.js';
 
 export interface LessonSummary {
@@ -134,6 +134,10 @@ export interface FullProgressView {
   readonly kana: ProgressView;
   readonly vocab: ProgressView;
   readonly showVocab: boolean;
+  /** いま取り組んでいる等級（N5 / N4）。 */
+  readonly vocabLevel?: string;
+  /** その等級の中での進み。全体の数だけだと現在地が見えない。 */
+  readonly levelProgress?: { introduced: number; total: number };
 }
 
 /**
@@ -151,12 +155,19 @@ export function renderFullProgress(view: FullProgressView): string {
     `  已学 ${String(view.kana.introduced)}/${String(view.kana.total)}　待复习 ${String(view.kana.dueNow)}`,
   ];
   if (view.showVocab) {
-    lines.push(
-      '',
-      'N5 单词',
-      bar(view.vocab.introduced, view.vocab.total),
-      `  已学 ${String(view.vocab.introduced)}/${String(view.vocab.total)}　待复习 ${String(view.vocab.dueNow)}`,
-    );
+    const label = view.vocabLevel === undefined ? '单词' : `${view.vocabLevel} 单词`;
+    lines.push('', label, bar(view.vocab.introduced, view.vocab.total));
+    // 全体の数だけだと「1375 のうち 90」で現在地が分からない。
+    // いまの等級の中でどこまで来たかを併記する。
+    if (view.levelProgress !== undefined) {
+      lines.push(
+        `  ${view.vocabLevel ?? ''} ${String(view.levelProgress.introduced)}/${String(view.levelProgress.total)}　合计 ${String(view.vocab.introduced)}/${String(view.vocab.total)}　待复习 ${String(view.vocab.dueNow)}`,
+      );
+    } else {
+      lines.push(
+        `  已学 ${String(view.vocab.introduced)}/${String(view.vocab.total)}　待复习 ${String(view.vocab.dueNow)}`,
+      );
+    }
   }
   return lines.join('\n');
 }

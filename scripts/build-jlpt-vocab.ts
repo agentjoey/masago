@@ -18,9 +18,14 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const SOURCE_URL =
-  'https://raw.githubusercontent.com/elzup/jlpt-word-list/master/src/n5.csv';
-const OUT_PATH = join(process.cwd(), 'src', 'curriculum', 'vocabN5.ts');
+const SOURCE_BASE =
+  'https://raw.githubusercontent.com/elzup/jlpt-word-list/master/src';
+
+/** 教える順。N5 を終えてから N4（V2 §2.1 の S1 → S2）。 */
+const LEVELS = [
+  { level: 'N5', file: 'n5.csv', out: 'vocabN5.ts', constant: 'VOCAB_N5' },
+  { level: 'N4', file: 'n4.csv', out: 'vocabN4.ts', constant: 'VOCAB_N4' },
+] as const;
 
 interface RawRow {
   expression: string;
@@ -116,6 +121,7 @@ function genkiLessonOf(tags: string): number | undefined {
 
 interface Entry {
   id: string;
+  level: string;
   expression: string;
   reading: string;
   displayReading: string;
@@ -124,7 +130,7 @@ interface Entry {
   isAffix: boolean;
 }
 
-function toEntry(row: RawRow): Entry | undefined {
+function toEntry(row: RawRow, level: string): Entry | undefined {
   const reading = primaryReading(row.reading);
   if (reading === undefined) return undefined;
   // 表記も読みも鍵に入れる。同表記異読を一つにまとめると、
@@ -132,6 +138,7 @@ function toEntry(row: RawRow): Entry | undefined {
   const expression = row.expression.split(';')[0]?.trim() ?? row.expression;
   return {
     id: `${expression}#${reading}`,
+    level,
     expression,
     reading,
     displayReading: row.reading,
@@ -160,23 +167,21 @@ function quote(value: string): string {
   return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 }
 
-async function main(): Promise<void> {
-  console.log(`取得中: ${SOURCE_URL}`);
-  const response = await fetch(SOURCE_URL, {
-    signal: AbortSignal.timeout(60_000),
-  });
+async function buildLevel(spec: (typeof LEVELS)[number]): Promise<number> {
+  const url = `${SOURCE_BASE}/${spec.file}`;
+  console.log(`\n取得中: ${url}`);
+  const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
   if (!response.ok) {
     throw new Error(`fetch failed: ${String(response.status)}`);
   }
-  const csv = await response.text();
-  const rows = parseCsv(csv);
+  const rows = parseCsv(await response.text());
   console.log(`  取得 ${String(rows.length)} 行`);
 
   const entries: Entry[] = [];
   const skipped: string[] = [];
   const seen = new Set<string>();
   for (const row of rows) {
-    const entry = toEntry(row);
+    const entry = toEntry(row, spec.level);
     if (entry === undefined) {
       skipped.push(`${row.expression}(${row.reading})`);
       continue;
@@ -188,11 +193,10 @@ async function main(): Promise<void> {
 
   const ordered = teachingOrder(entries);
   const withLesson = ordered.filter((e) => e.genkiLesson !== undefined).length;
-
-  console.log(`  採用 ${String(ordered.length)} 語`);
-  console.log(`  うち Genki 課順あり ${String(withLesson)} 語`);
-  console.log(`  読みを仮名化できず除外 ${String(skipped.length)} 語`);
-  for (const item of skipped.slice(0, 10)) console.log(`    - ${item}`);
+  console.log(`  採用 ${String(ordered.length)} 語（Genki 課順あり ${String(withLesson)}）`);
+  if (skipped.length > 0) {
+    console.log(`  読みを仮名化できず除外 ${String(skipped.length)} 語`);
+  }
 
   const body = ordered
     .map((entry) => {
@@ -205,64 +209,42 @@ async function main(): Promise<void> {
         entry.displayReading === entry.reading
           ? ''
           : `, displayReading: ${quote(entry.displayReading)}`;
-      return `  { id: ${quote(entry.id)}, expression: ${quote(entry.expression)}, reading: ${quote(entry.reading)}, meaning: ${quote(entry.meaning)}${display}${lesson}${affix} },`;
+      return `  { id: ${quote(entry.id)}, level: ${quote(entry.level)}, expression: ${quote(entry.expression)}, reading: ${quote(entry.reading)}, meaning: ${quote(entry.meaning)}${display}${lesson}${affix} },`;
     })
     .join('\n');
 
   const file = `/**
- * JLPT N5 語彙（V2 §8）。**自動生成。手で編集しない。**
+ * JLPT ${spec.level} 語彙（V2 §8）。**自動生成。手で編集しない。**
  *
  *   pnpm build:vocab
  *
  * 出典: elzup/jlpt-word-list（MIT License, © 2020 Jamie Sinclair / elzup）
- *       ${SOURCE_URL}
+ *       ${url}
  *
  * 語義は出典どおりの英語。中国語に機械翻訳して取り込むと、確かめようの
  * 無い誤りが「正解データ」として混ざる——語義は事実なので出典に委ねる
  * （§8）。学習者への中国語の説明は、必要なときにチューターが行う。
  *
- * 並びは Genki の課順（1〜23）を骨にし、その後ろに Genki に無い語を
- * 出典の並びのまま置く。詳細は scripts/build-jlpt-vocab.ts を参照。
+ * 並びは Genki の課順を骨にし、その後ろに Genki に無い語を出典の並びの
+ * まま置く。詳細は scripts/build-jlpt-vocab.ts を参照。
  */
+import type { VocabEntry } from './vocabTypes.js';
 
-export interface VocabEntry {
-  /** \`表記#読み\` で一意。同表記異読を別語として扱うため。 */
-  readonly id: string;
-  readonly expression: string;
-  /** 仮名だけの主たる読み。振り仮名と音声合成に使う。 */
-  readonly reading: string;
-  /** 出典の読み表記（「いく; ゆく」「～えん」など）。 */
-  readonly displayReading?: string;
-  /** 出典どおりの英語の語義。 */
-  readonly meaning: string;
-  /** Genki の課。無い語は N5 の補遺。 */
-  readonly genkiLesson?: number;
-  /** 接辞（～円、～時）。単独の語として出題しない。 */
-  readonly isAffix?: boolean;
-}
-
-export const VOCAB_N5: readonly VocabEntry[] = [
+export const ${spec.constant}: readonly VocabEntry[] = [
 ${body}
 ];
-
-export const VOCAB_N5_BY_ID: ReadonlyMap<string, VocabEntry> = new Map(
-  VOCAB_N5.map((entry) => [entry.id, entry]),
-);
-
-/** knowledge_items.key に入る形。型が VOCABULARY なので接頭辞で衝突しない。 */
-export function vocabKey(id: string): string {
-  return \`vocab_\${id}\`;
-}
-
-export function vocabOfKey(key: string): VocabEntry | undefined {
-  return key.startsWith('vocab_')
-    ? VOCAB_N5_BY_ID.get(key.slice('vocab_'.length))
-    : undefined;
-}
 `;
 
-  await writeFile(OUT_PATH, file, 'utf8');
-  console.log(`\n書き出し: ${OUT_PATH}`);
+  await writeFile(join(process.cwd(), 'src', 'curriculum', spec.out), file, 'utf8');
+  console.log(`  書き出し: src/curriculum/${spec.out}`);
+  return ordered.length;
 }
 
+async function main(): Promise<void> {
+  let total = 0;
+  for (const spec of LEVELS) {
+    total += await buildLevel(spec);
+  }
+  console.log(`\n合計 ${String(total)} 語`);
+}
 await main();

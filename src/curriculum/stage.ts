@@ -4,7 +4,7 @@
  * 純粋関数。DB も時計も見ない。
  */
 import { KANA } from './kana.js';
-import { VOCAB_N5, type VocabEntry } from './vocabN5.js';
+import { VOCAB, type JlptLevel, type VocabEntry } from './vocab.js';
 
 /** 清音の総数。ここが読めれば大半の語は音を追える。 */
 export const SEION_COUNT = KANA.filter((kana) => kana.group === 'seion').length;
@@ -48,7 +48,7 @@ export interface VocabPlan {
   readonly newHeldBackForBacklog: boolean;
 }
 
-const VOCAB_BY_ID = new Map(VOCAB_N5.map((entry) => [entry.id, entry]));
+const VOCAB_BY_ID = new Map(VOCAB.map((entry) => [entry.id, entry]));
 
 /**
  * 次に導入する語を選ぶ。
@@ -69,7 +69,7 @@ export function planVocabLesson(input: VocabPlanInput): VocabPlan {
 
   const newWords = newHeldBackForBacklog
     ? []
-    : VOCAB_N5.filter(
+    : VOCAB.filter(
         (entry) => !introduced.has(entry.id) && entry.isAffix !== true,
       ).slice(0, Math.max(0, input.newPerDay));
 
@@ -81,7 +81,38 @@ export function vocabProgress(introducedIds: readonly string[]): {
   total: number;
 } {
   const introduced = new Set(introducedIds);
-  const teachable = VOCAB_N5.filter((entry) => entry.isAffix !== true);
+  const teachable = VOCAB.filter((entry) => entry.isAffix !== true);
+  return {
+    introduced: teachable.filter((entry) => introduced.has(entry.id)).length,
+    total: teachable.length,
+  };
+}
+
+/**
+ * いま取り組んでいる等級（V2 §2.1 の S1 → S2）。
+ *
+ * 語彙は N5 を全部終えてから N4 に入る一本の列なので、次に出す語の等級が
+ * そのまま現在地になる。全部終えていれば最後の等級を返す。
+ */
+export function currentVocabLevel(
+  introducedIds: readonly string[],
+): JlptLevel {
+  const introduced = new Set(introducedIds);
+  const next = VOCAB.find(
+    (entry) => !introduced.has(entry.id) && entry.isAffix !== true,
+  );
+  return next?.level ?? 'N4';
+}
+
+/** 等級ごとの進み具合。進度表示で「N5 のどこまで」を出すのに使う。 */
+export function vocabProgressByLevel(
+  introducedIds: readonly string[],
+  level: JlptLevel,
+): { introduced: number; total: number } {
+  const introduced = new Set(introducedIds);
+  const teachable = VOCAB.filter(
+    (entry) => entry.level === level && entry.isAffix !== true,
+  );
   return {
     introduced: teachable.filter((entry) => introduced.has(entry.id)).length,
     total: teachable.length,

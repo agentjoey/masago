@@ -27,7 +27,14 @@ import {
   partsInZone,
   zonedWallClockToInstant,
 } from './scheduler/index.js';
-import { createLogger, startHealthServer } from './observability/index.js';
+import { createLogger } from './observability/index.js';
+import {
+  findLearnerId,
+  loadCalendar,
+  loadErrors,
+  loadProgress,
+  startMiniAppServer,
+} from './miniapp/index.js';
 import { createAnalyzer, crossCheck } from './nlp/index.js';
 import {
   createCommandHandlers,
@@ -400,10 +407,39 @@ const dailyReminder = createDailyReminder({
   },
 });
 
-const healthServer = startHealthServer({
+/**
+ * Mini App（V3）と健康確認を同じポートで出す。ruby 排版・進度・錯題本・
+ * 復習日历は同じ後端から読む——別集計を作ると bot と数字が食い違う。
+ */
+const healthServer = startMiniAppServer({
   port: config.server.port,
   version: pkg.version,
   logger,
+  botToken: config.telegram.botToken,
+  allowedTelegramUserId: config.telegram.allowedUserId,
+  handlers: {
+    progress: async (telegramUserId) => {
+      const learnerId = await findLearnerId(db, telegramUserId);
+      if (learnerId === undefined) return null;
+      return loadProgress(db, learnerId, new Date(), config.session.userTimezone);
+    },
+    errors: async (telegramUserId) => {
+      const learnerId = await findLearnerId(db, telegramUserId);
+      if (learnerId === undefined) return [];
+      return loadErrors(db, learnerId, 50);
+    },
+    calendar: async (telegramUserId) => {
+      const learnerId = await findLearnerId(db, telegramUserId);
+      if (learnerId === undefined) return [];
+      return loadCalendar(
+        db,
+        learnerId,
+        new Date(),
+        config.session.userTimezone,
+        28,
+      );
+    },
+  },
 });
 
 onShutdown(() => {

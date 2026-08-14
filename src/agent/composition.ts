@@ -86,6 +86,20 @@ export interface JudgeCompositionOptions {
   readonly client: AnthropicClientLike;
   readonly model: string;
   readonly maxTokens?: number;
+  /**
+   * 一度きりの再試行を許すか（既定 true）。
+   *
+   * 実測（240 件の評価）で、5 並列に投げると 3 分の 1 が返らなかった。
+   * 同じ入力を単発で投げ直すと 4 秒で返ったので、原因は判定の失敗ではなく
+   * 送信側の詰まり。**一回だけ**やり直す——それ以上粘ると、学習者を
+   * 待たせるほうが害になる。
+   */
+  readonly retry?: boolean;
+  /**
+   * 落ちた理由の通知。返り値は undefined のままなので、呼び出し側は
+   * 「判定できなかった」として扱えばよい。運用で原因を見るための口。
+   */
+  readonly onError?: (error: unknown, willRetry: boolean) => void;
 }
 
 /**
@@ -109,9 +123,8 @@ export async function judgeComposition(
     );
   }
 
-  let response;
-  try {
-    response = await options.client.messages.create({
+  const ask = async (): Promise<Anthropic.Message> =>
+    options.client.messages.create({
       model: options.model,
       max_tokens: options.maxTokens ?? 300,
       system: [{ type: 'text', text: SYSTEM }],
@@ -121,8 +134,20 @@ export async function judgeComposition(
       // スキーマ強制はツールの input_schema に委ねる（tutor.ts と同じ）。
       tool_choice: { type: 'tool', name: TOOL_NAME },
     });
-  } catch {
-    return undefined;
+
+  const mayRetry = options.retry ?? true;
+  let response: Anthropic.Message;
+  try {
+    response = await ask();
+  } catch (error) {
+    options.onError?.(error, mayRetry);
+    if (!mayRetry) return undefined;
+    try {
+      response = await ask();
+    } catch (again) {
+      options.onError?.(again, false);
+      return undefined;
+    }
   }
 
   // text ブロックと tool_use が同時に返ることがある（実測）。

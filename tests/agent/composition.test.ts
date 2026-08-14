@@ -110,3 +110,66 @@ describe('judgeComposition', () => {
     expect(call.tool_choice).toEqual({ type: 'tool', name: 'submit_verdict' });
   });
 });
+
+describe('送信が詰まったとき', () => {
+  /**
+   * 実測：240 件を 5 並列で投げると 3 分の 1 が返らなかった。同じ入力を
+   * 単発で投げ直すと 4 秒で返ったので、原因は判定の失敗ではなく詰まり。
+   * 並列を 2 に落として一度だけ再試行したら、判定不能は 60 → 6 に減った。
+   */
+  it('retries once and succeeds', async () => {
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('429 rate limited'))
+      .mockResolvedValueOnce({
+        content: [
+          { type: 'tool_use', name: 'submit_verdict', id: 't', input: { ok: true, note: '' } },
+        ],
+      });
+    const verdict = await judgeComposition(
+      { meaning: '你好', reference: 'こんにちは。', written: 'こんにちは' },
+      { client: { messages: { create } }, model: 'test-model' },
+    );
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(verdict).toEqual({ ok: true, note: '' });
+  });
+
+  it('gives up after the second failure rather than hanging on', async () => {
+    const create = vi.fn().mockRejectedValue(new Error('down'));
+    const seen: boolean[] = [];
+    const verdict = await judgeComposition(
+      { meaning: '你好', reference: 'こんにちは。', written: 'x' },
+      {
+        client: { messages: { create } },
+        model: 'test-model',
+        onError: (_error, willRetry) => seen.push(willRetry),
+      },
+    );
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(seen).toEqual([true, false]);
+    expect(verdict).toBeUndefined();
+  });
+
+  it('does not retry when the caller turns it off', async () => {
+    const create = vi.fn().mockRejectedValue(new Error('down'));
+    await judgeComposition(
+      { meaning: '你好', reference: 'こんにちは。', written: 'x' },
+      { client: { messages: { create } }, model: 'test-model', retry: false },
+    );
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  /** 判定が返ってきた場合は投げ直さない。 */
+  it('never retries a successful call', async () => {
+    const create = vi.fn().mockResolvedValue({
+      content: [
+        { type: 'tool_use', name: 'submit_verdict', id: 't', input: { ok: false, note: 'x' } },
+      ],
+    });
+    await judgeComposition(
+      { meaning: '你好', reference: 'こんにちは。', written: 'x' },
+      { client: { messages: { create } }, model: 'test-model' },
+    );
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+});

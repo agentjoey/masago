@@ -18,6 +18,7 @@ import * as reviewQueueRepo from './db/repositories/reviewQueue.js';
 import { createKanaCommands } from './learning/kanaCommands.js';
 import { ensureKanaSeeded } from './learning/kanaSeed.js';
 import { ensureVocabSeeded } from './learning/vocabSeed.js';
+import { ensureParticlesSeeded } from './learning/particleSeed.js';
 import * as ttsCacheRepo from './db/repositories/ttsCache.js';
 import { speak } from './speech/voiceCache.js';
 import { collectReminderFacts } from './learning/reminderFacts.js';
@@ -246,6 +247,10 @@ async function runStartupChecks(): Promise<{ dbRoundTripMs: number }> {
   const vocabSeeded = await ensureVocabSeeded(db);
   if (vocabSeeded.inserted > 0) {
     logger.info('seeded vocabulary knowledge items', { ...vocabSeeded });
+  }
+  const particlesSeeded = await ensureParticlesSeeded(db);
+  if (particlesSeeded.inserted > 0) {
+    logger.info('seeded particle knowledge items', { ...particlesSeeded });
   }
   for (const warning of keyFormatWarnings()) {
     logger.warn('provider key format looks unusual', { warning });

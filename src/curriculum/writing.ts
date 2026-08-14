@@ -8,6 +8,11 @@
  * ここでは文を作らない。
  */
 import type { Sentence, StoredToken } from './sentences.js';
+import {
+  isBlankableParticle,
+  PARTICLE_BY_SURFACE,
+  PARTICLE_SURFACES,
+} from './particles.js';
 import type { Random } from './quiz.js';
 
 /* ─────────────── 文節への分割 ─────────────── */
@@ -81,14 +86,13 @@ export function toChunks(tokens: readonly StoredToken[]): Chunk[] {
 
 /* ─────────────── 助詞の穴埋め ─────────────── */
 
-/** よく使う格助詞。誤答はここから採る。 */
-const COMMON_PARTICLES = ['が', 'を', 'に', 'で', 'と', 'は', 'へ', 'も', 'から', 'まで'];
-
 export interface ParticleBlank {
   readonly sentenceId: string;
   /** 空欄を `＿` にした本文。 */
   readonly prompt: string;
   readonly answer: string;
+  /** 問うている助詞の知識項 id（`particles.ts`）。復習の記録に使う。 */
+  readonly particleId: string;
   readonly options: readonly string[];
   /** 元の文。答え合わせで見せる。 */
   readonly full: string;
@@ -108,6 +112,13 @@ function shuffle<T>(items: readonly T[], random: Random): T[] {
   return out;
 }
 
+export interface ParticleBlankOptions {
+  readonly optionCount: number;
+  readonly random: Random;
+  /** この助詞を問う。復習で期限が来た項目を出すときに指定する。 */
+  readonly particleId?: string;
+}
+
 /**
  * 助詞を一つ隠して選ばせる。
  *
@@ -116,16 +127,16 @@ function shuffle<T>(items: readonly T[], random: Random): T[] {
  */
 export function buildParticleBlank(
   sentence: Sentence,
-  options: { optionCount: number; random: Random },
+  options: ParticleBlankOptions,
 ): ParticleBlank | undefined {
-  // 名詞に付いた格助詞だけを問う。
+  // 名詞に付いた助詞だけを問う。
   //
   // これを絞らないと、固定表現の一部を問うことになる——「お飲みに
-  // なりますか」の「に」は尊敬語 お〜になる の部品で、格助詞を選ぶ
+  // なりますか」の「に」は尊敬語 お〜になる の部品で、助詞を選ぶ
   // 問題ではない。「質問してもいい」の「も」も同じ。
-  // 名詞に付く格助詞なら、問いは常に「この名詞は文の中で何の役か」
+  // 名詞に付く助詞なら、問いは常に「この名詞は文の中で何の役か」
   // になり、初級で本当に要る力に一致する。
-  const candidates = blankCandidates(sentence);
+  const candidates = blankCandidates(sentence, options.particleId);
   if (candidates.length === 0) return undefined;
 
   const picked = candidates[Math.floor(random01(options.random) * candidates.length)];
@@ -138,39 +149,62 @@ interface BlankCandidate {
   index: number;
 }
 
-function blankCandidates(sentence: Sentence): BlankCandidate[] {
+/**
+ * 本文に `needle` が何回出るか。
+ *
+ * 文字単位で数えてはいけない。「から」「まで」「より」は二文字なので、
+ * 一文字ずつと比べると**永遠に 0 回**になり、候補から黙って外れる
+ * ——実測で、から/まで/より は一問も出題されていなかった。
+ * 部分文字列で数えれば一文字の助詞でも結果は変わらない。
+ */
+function occurrencesOf(haystack: string, needle: string): number {
+  let count = 0;
+  let at = haystack.indexOf(needle);
+  while (at >= 0) {
+    count += 1;
+    at = haystack.indexOf(needle, at + 1);
+  }
+  return count;
+}
+
+function blankCandidates(
+  sentence: Sentence,
+  particleId?: string,
+): BlankCandidate[] {
   return sentence.tokens
     .map((token, index) => ({ token, index }))
     .filter(({ token, index }) => {
-      // は・も は係助詞だが、名詞に付いて役割を示す点は同じで、
-      // 初級では が/を との使い分けが最大の難所。含める。
-      const isCase = token.d === '格助詞';
-      const isTopic =
-        token.d === '係助詞' && (token.s === 'は' || token.s === 'も');
-      if (token.p !== '助詞' || (!isCase && !isTopic)) return false;
-      if (!COMMON_PARTICLES.includes(token.s)) return false;
+      if (!isBlankableParticle(token)) return false;
+      if (
+        particleId !== undefined &&
+        PARTICLE_BY_SURFACE.get(token.s)?.id !== particleId
+      ) {
+        return false;
+      }
       const previous = sentence.tokens[index - 1];
       if (previous === undefined || previous.p !== '名詞') return false;
-      // 答えの文字が本文の他所に残っていたら、そこを見れば分かってしまう。
+      // 答えが本文の他所に残っていたら、そこを見れば分かってしまう。
       //
       // 語（トークン）単位で数えるだけでは足りない。「今では」の で を
       // 隠しても「でも」の で が本文に残る——別の語の一部でも、
-      // 学習者の目には同じ文字として映る。文字単位で見る。
-      const occurrences = [...sentence.text].filter(
-        (char) => char === token.s,
-      ).length;
-      return occurrences === 1;
+      // 学習者の目には同じ文字として映る。
+      return occurrencesOf(sentence.text, token.s) === 1;
     });
 }
 
 function finishBlank(
   sentence: Sentence,
   picked: BlankCandidate,
-  options: { optionCount: number; random: Random },
-): ParticleBlank {
+  options: ParticleBlankOptions,
+): ParticleBlank | undefined {
   const answer = picked.token.s;
+  const entry = PARTICLE_BY_SURFACE.get(answer);
+  if (entry === undefined) return undefined;
+
+  // 誤答も答えと同じ集合から採る。別々の集合にすると、答えにしか
+  // 出ない助詞ができてしまい、「見慣れない字が答え」という当て方が通る。
   const distractors = shuffle(
-    COMMON_PARTICLES.filter((particle) => particle !== answer),
+    PARTICLE_SURFACES.filter((particle) => particle !== answer),
     options.random,
   ).slice(0, Math.max(0, options.optionCount - 1));
 
@@ -180,6 +214,7 @@ function finishBlank(
       .map((token, index) => (index === picked.index ? '＿' : token.s))
       .join(''),
     answer,
+    particleId: entry.id,
     options: shuffle([answer, ...distractors], options.random),
     full: sentence.text,
   };
@@ -304,8 +339,11 @@ export function judgeWordOrder(
  * 判定は `buildParticleBlank` と同じ条件を使う。別々に書くと、
  * 「使える」と言っておいて出題が undefined を返す食い違いが起きる。
  */
-export function usableForParticle(sentence: Sentence): boolean {
-  return blankCandidates(sentence).length > 0;
+export function usableForParticle(
+  sentence: Sentence,
+  particleId?: string,
+): boolean {
+  return blankCandidates(sentence, particleId).length > 0;
 }
 
 /** 会話の引用符を含む文。並べ替えの断片としては読めない。 */

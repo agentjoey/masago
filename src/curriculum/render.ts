@@ -5,9 +5,11 @@
  * 教える対象の日本語と、操作を説明する言葉は分ける。
  */
 import type { Kana } from './kana.js';
+import type { Particle } from './particles.js';
 import type { QuizQuestion } from './quiz.js';
 import type { VocabEntry } from './vocab.js';
 import type { VocabQuestion } from './vocabQuiz.js';
+import type { OrderVerdict } from './writing.js';
 
 export interface LessonSummary {
   readonly newKana: readonly Kana[];
@@ -423,4 +425,96 @@ export function streakOf(
     else break;
   }
   return streak;
+}
+
+/* ─────────────── 書く練習（docs/scenario-learning.md §5） ─────────────── */
+
+/** 助詞を教えるカード。 */
+export function renderParticleCard(
+  particle: Particle,
+  index: number,
+  total: number,
+): string {
+  const lines = [
+    `${String(index)}/${String(total)}`,
+    '',
+    `【${particle.surface}】`,
+    `　读作 ${particle.reading}`,
+    `　${particle.label}`,
+  ];
+  // 表記どおりに読まない三つは、そこだけ念を押す。仮名を覚えた直後ほど
+  // 「は」を ha と読んでしまう。
+  if (particle.surface !== particle.reading) {
+    lines.push('', `⚠️ 作助词时读 ${particle.reading}，不读 ${defaultReadingOf(particle.surface)}`);
+  }
+  return lines.join('\n');
+}
+
+/** 助詞として読み方が変わる三つの、本来の読み。 */
+function defaultReadingOf(surface: string): string {
+  const table: Record<string, string> = { は: 'ha', へ: 'he', を: 'wo' };
+  return table[surface] ?? surface;
+}
+
+export function renderParticleQuestion(prompt: string): string {
+  return `填入合适的助词：\n\n${prompt}`;
+}
+
+export function renderParticleCorrect(
+  particle: Particle,
+  full: string,
+): string {
+  return `✅ ${full}\n\n${particle.surface}（${particle.reading}）— ${particle.label}`;
+}
+
+export function renderParticleWrong(
+  answer: Particle,
+  chosen: Particle | undefined,
+  full: string,
+): string {
+  const lines = [`❌ 正确答案是 ${answer.surface}`, '', full, '', `${answer.surface}（${answer.reading}）— ${answer.label}`];
+  if (chosen !== undefined && chosen.id !== answer.id) {
+    lines.push(`你选的 ${chosen.surface} 是「${chosen.label}」`);
+  }
+  return lines.join('\n');
+}
+
+export function renderWordOrderQuestion(pieces: readonly string[]): string {
+  return [
+    '把下面的词按正确顺序排成一句话：',
+    '',
+    pieces.join('　/　'),
+    '',
+    '回复完整的句子',
+  ].join('\n');
+}
+
+export function renderWordOrderResult(
+  verdict: OrderVerdict,
+  full: string,
+  submitted: string,
+): string {
+  if (verdict === 'CORRECT') return `✅ ${full}`;
+  if (verdict === 'ACCEPTABLE') {
+    // 日本語の語順は比較的自由。正しく書いた人に ❌ を出さない。
+    return [
+      '⭕ 这样也说得通。',
+      '',
+      `原句是：${full}`,
+      '日语语序比较自由，只要谓语在最后、助词用对，换个顺序也成立。',
+    ].join('\n');
+  }
+  const lines = ['❌ 正确的是：', '', full];
+  if (submitted.trim() !== '') lines.push('', `你写的是：${submitted.trim()}`);
+  return lines.join('\n');
+}
+
+export function renderWritingIntro(introduced: number, total: number): string {
+  return [
+    '✍️ 写句子练习',
+    '',
+    `助词进度 ${String(introduced)}/${String(total)}`,
+    '',
+    '助词是日语最容易出错的地方——先把它们练熟。',
+  ].join('\n');
 }

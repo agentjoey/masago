@@ -173,7 +173,11 @@ describe('judgeWordOrder — 语序不是唯一的', () => {
 describe('sentence pool', () => {
   it('is large enough to practise with', () => {
     expect(SENTENCES.length).toBeGreaterThan(1500);
-    expect(SENTENCES.filter(usableForParticle).length).toBeGreaterThan(800);
+    // 引数をそのまま渡さないこと。`usableForParticle` の第二引数は
+    // particleId なので、filter の index が入ると全件 false になる。
+    expect(SENTENCES.filter((s) => usableForParticle(s)).length).toBeGreaterThan(
+      800,
+    );
     expect(SENTENCES.filter(usableForWordOrder).length).toBeGreaterThan(800);
   });
 

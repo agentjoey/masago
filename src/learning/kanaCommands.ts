@@ -6,6 +6,10 @@ import {
   renderDaily,
   renderDrillFinished,
   renderFullProgress,
+  renderParticleCard,
+  renderParticleCorrect,
+  renderParticleQuestion,
+  renderParticleWrong,
   renderQuestion,
   renderTeachingCard,
   renderVocabCard,
@@ -13,6 +17,9 @@ import {
   renderVocabQuestion,
   renderVocabWrong,
   renderWelcome,
+  renderWordOrderQuestion,
+  renderWordOrderResult,
+  renderWritingIntro,
   renderWrong,
   type CostView,
 } from '../curriculum/render.js';
@@ -41,6 +48,17 @@ import {
   nextVocabQuestion,
   planVocabSession,
 } from './vocabSession.js';
+import {
+  decodeParticleAnswer,
+  encodeParticleAnswer,
+  gradeParticle,
+  gradeWordOrder,
+  introduceParticles,
+  nextWritingQuestion,
+  planWritingSession,
+  sentenceOfOrderQuestion,
+  type WritingQuestion,
+} from './writingSession.js';
 
 /**
  * 仮名学習のコマンド層。
@@ -97,6 +115,8 @@ export interface KanaCommands {
   ): Promise<KanaReply[] | undefined>;
   /** S1：単語の練習。 */
   vocab(telegramUserId: number): Promise<KanaReply[]>;
+  /** 書く練習：助詞の穴埋めと語順の並べ替え。 */
+  write(telegramUserId: number): Promise<KanaReply[]>;
   /** 用量と費用。 */
   cost(telegramUserId: number): Promise<KanaReply[]>;
   /** 直近に答えた項目の解説。 */
@@ -217,6 +237,42 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         })),
       },
     ];
+  }
+
+  /** 書く練習の次の一問。 */
+  function toWritingReply(question: WritingQuestion): KanaReply {
+    if (question.kind === 'PARTICLE' && question.blankAt !== undefined) {
+      return {
+        text: renderParticleQuestion(question.prompt),
+        buttons: question.options.map((option) => ({
+          label: option,
+          data: encodeParticleAnswer(
+            question.sentenceId,
+            question.blankAt ?? 0,
+            option,
+          ),
+        })),
+      };
+    }
+    // 語順は打って答えてもらう。返信元の本文から、どの文を訊いたかが
+    // 断片の顔ぶれで辿れるので、出題を覚えておかずに済む。
+    return {
+      text: renderWordOrderQuestion(question.pieces),
+      expectsReply: true,
+    };
+  }
+
+  async function askNextWriting(
+    learnerId: string,
+    now: Date,
+    answered: number,
+  ): Promise<KanaReply[]> {
+    const next = await nextWritingQuestion(executor, learnerId, now, {
+      optionCount: deps.optionCount,
+      random: deps.random,
+    });
+    if (next === undefined) return [{ text: renderDrillFinished(answered) }];
+    return [toWritingReply(next)];
   }
 
   /** 次の一問。無ければ締めの一言。 */
@@ -386,6 +442,38 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
 
       const now = deps.now();
 
+      // 助詞の回答。仮名・単語とは別の接頭辞で先に分ける。
+      const particleAnswer = decodeParticleAnswer(callbackData);
+      if (particleAnswer !== undefined) {
+        const graded = await gradeParticle(
+          executor,
+          learnerId,
+          particleAnswer,
+          now,
+          deps.requestRetention,
+          responseMsOf(askedAt, now),
+        );
+        if (graded === undefined) {
+          return [{ text: '这道题已经过期了，发 /write 继续。' }];
+        }
+        const feedback: KanaReply = graded.correct
+          ? {
+              text: renderParticleCorrect(graded.answer, graded.full),
+              // 正解の文をそのまま聞かせる。助詞は文の中でしか
+              // 音の感じがつかめない。
+              speakText: graded.full,
+            }
+          : {
+              text: renderParticleWrong(
+                graded.answer,
+                graded.chosen,
+                graded.full,
+              ),
+              speakText: graded.full,
+            };
+        return [feedback, ...(await askNextWriting(learnerId, now, 1))];
+      }
+
       // 単語の回答は別の接頭辞。仮名として採点しないよう先に分ける。
       const vocabAnswer = decodeVocabAnswer(callbackData);
       if (vocabAnswer !== undefined) {
@@ -540,6 +628,59 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       return replies;
     },
 
+    async write(telegramUserId) {
+      const learnerId = await learnerIdOf(telegramUserId);
+      if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
+      const now = deps.now();
+
+      // 語彙が始まっていない段階では文が読めない。助詞だけ先に覚えても
+      // 入れる場所が分からず、記号の暗記にしかならない。
+      const vocab = await planVocabSession(executor, learnerId, now, lessonOptions);
+      if (vocab.stage === 'S0_KANA_ONLY') {
+        return [
+          {
+            text: '先把五十音的清音学完再来写句子——现在句子里的字还读不出来。\n\n发 /kana 继续。',
+          },
+        ];
+      }
+
+      const lesson = await planWritingSession(executor, learnerId, now, {
+        newPerDay: deps.newPerDay,
+        maxReviews: deps.maxReviews,
+      });
+
+      const replies: KanaReply[] = [];
+      if (lesson.progress.introduced === 0) {
+        replies.push({
+          text: renderWritingIntro(
+            lesson.progress.introduced,
+            lesson.progress.total,
+          ),
+        });
+      }
+      if (lesson.newParticles.length > 0) {
+        lesson.newParticles.forEach((particle, index) => {
+          replies.push({
+            text: renderParticleCard(
+              particle,
+              index + 1,
+              lesson.newParticles.length,
+            ),
+            // 助詞は一文字なので、単独で読み上げても学習者は聞き分けにくい。
+            // 音は文の中で聞かせたほうがよいので、ここでは付けない。
+          });
+        });
+        await introduceParticles(
+          executor,
+          learnerId,
+          lesson.newParticles.map((particle) => particle.id),
+          now,
+        );
+      }
+      replies.push(...(await askNextWriting(learnerId, now, 0)));
+      return replies;
+    },
+
     async answerTyped(telegramUserId, questionText, typed, askedAt) {
       // 返信元が出題でなければ、これは答えではなく普通の会話。
       // undefined を返して、呼び出し側に通常の経路へ渡させる。
@@ -548,7 +689,15 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         targetId === undefined
           ? targetOfVocabQuestionText(questionText)
           : undefined;
-      if (targetId === undefined && vocabTargetId === undefined) {
+      const orderSentenceId =
+        targetId === undefined && vocabTargetId === undefined
+          ? sentenceOfOrderQuestion(questionText)
+          : undefined;
+      if (
+        targetId === undefined &&
+        vocabTargetId === undefined &&
+        orderSentenceId === undefined
+      ) {
         return undefined;
       }
 
@@ -556,6 +705,20 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
 
       const now = deps.now();
+
+      if (orderSentenceId !== undefined) {
+        const result = gradeWordOrder(orderSentenceId, typed);
+        if (result === undefined) return undefined;
+        // 語順は特定の知識項を測っていないので FSRS には入れない
+        // （writingSession.nextWritingQuestion の註）。
+        return [
+          {
+            text: renderWordOrderResult(result.verdict, result.full, typed),
+            speakText: result.full,
+          },
+          ...(await askNextWriting(learnerId, now, 1)),
+        ];
+      }
 
       if (vocabTargetId !== undefined) {
         const gradedVocab = await gradeVocabTyped(

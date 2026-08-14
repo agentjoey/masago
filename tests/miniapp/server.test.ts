@@ -94,6 +94,10 @@ describe('mini app server', () => {
     // 原生の骨格：下端タブ栏と iPhone の安全域。消えたら「ただの Web ページ」に戻る。
     expect(html).toContain('id="tabbar"');
     expect(html).toContain('safe-area-inset-bottom');
+    // ブランドの顔は頁に焼き込む（要求を増やさず最初の描画に間に合わせる）。
+    // 大きな画像を焼くと開くたびに重くなるので、頁全体の上限をここで留める。
+    expect(html).toContain('data:image/webp;base64,');
+    expect(html.length).toBeLessThan(90_000);
   });
 
   // 探针は 30 秒級で叩いてくる。ここで DB を触ると Neon が寝なくなる（§6）。

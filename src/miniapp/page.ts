@@ -28,6 +28,8 @@
  * sendData は無い）。`t.me/<bot>?start=<cmd>` の深リンクに逃がし、
  * bot 側の /start が payload を既存コマンドへ振り分ける。
  */
+import { MASA_AVATAR } from './brandAsset.js';
+
 export function renderPage(options?: {
   /** @ なしの bot username。無ければ「続きから」はただ閉じる。 */
   botUsername?: string;
@@ -72,6 +74,8 @@ export function renderPage(options?: {
   --fill-2: color-mix(in srgb, var(--fg) 11%, transparent);
   --accent-soft: rgba(60,130,246,.14);
   --accent-soft: color-mix(in srgb, var(--accent) 13%, transparent);
+  /* ロゴの葡萄酒色（元画像から採取）。主題変数ではなく銘柄の定数。 */
+  --brand: #935152;
   --jp: "Hiragino Sans", "Noto Sans CJK JP", sans-serif;
 }
 
@@ -94,17 +98,40 @@ button { font: inherit; color: inherit; border: 0; background: none; padding: 0;
 }
 
 /* ── 首页のブランド行。MasaGo の「顔」はここだけに置く ── */
-.brand { display: flex; align-items: center; gap: 10px; margin: 10px 2px 4px; }
-.ava {
-  width: 38px; height: 38px; border-radius: 12px; flex: none;
-  display: flex; align-items: center; justify-content: center;
-  background: var(--accent);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 72%, #fff), var(--accent));
-  color: #fff; font-family: var(--jp); font-size: 20px; font-weight: 700;
-  box-shadow: 0 2px 6px rgba(60,130,246,.3);
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 32%, transparent);
+.brand {
+  display: flex; align-items: center; gap: 10px; margin: 10px 2px 4px;
+  /* 銘柄の赤は主題から来ない定数。地色に合わせて前景と混ぜ、
+     明暗どちらでも読める濃さにする（color-mix が無ければ素の赤）。 */
+  --bink: var(--brand);
+  --bink: color-mix(in srgb, var(--brand) 70%, var(--fg));
 }
-.bname { font-size: 28px; font-weight: 800; letter-spacing: -.02em; }
+.ava {
+  display: block; width: 38px; height: 38px; border-radius: 12px; flex: none;
+  background-image: url("${MASA_AVATAR}");
+  background-size: cover; background-position: 50% 50%;
+  background-color: var(--fill);
+  box-shadow: 0 1px 4px rgba(0,0,0,.16);
+}
+/* 顔が地に溶けないよう内側に髪の毛一本の枠。影だけだと明色の地で消える。 */
+.ava::after {
+  content: ''; display: block; height: 100%; border-radius: inherit;
+  box-shadow: inset 0 0 0 .5px var(--hair);
+}
+.bname {
+  /* 「日式英文」＝明朝体のラテン。webfont は外部要求になるので、
+     手元にある明朝を順に当てる（iOS/macOS → Windows → Android → 中文明朝）。 */
+  font-family: "Hiragino Mincho ProN", "Hiragino Mincho Pro", "Yu Mincho",
+    YuMincho, "Noto Serif JP", "Noto Serif CJK JP", "Songti SC", serif;
+  font-size: 28px; font-weight: 600; letter-spacing: .012em;
+  color: var(--bink);
+  position: relative; padding-bottom: 4px;
+}
+/* ロゴの下線。両端が細る筆の運びを勾配で真似る。 */
+.bname::after {
+  content: ''; position: absolute; left: 1px; right: 1px; bottom: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--bink) 16%, var(--bink) 84%, transparent);
+  opacity: .55;
+}
 .iconbtn {
   margin-left: auto; width: 34px; height: 34px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
@@ -281,7 +308,7 @@ dialog.closing { animation: sheetdown .18s ease-in forwards; }
 
 /* 設定シート（账号・用量・关于） */
 .setacct { display: flex; align-items: center; gap: 12px; padding: 4px 2px 2px; }
-.setacct .ava { width: 44px; height: 44px; font-size: 22px; border-radius: 14px; }
+.setacct .ava { width: 44px; height: 44px; border-radius: 14px; }
 .setacct b { font-size: 16px; }
 .setacct .muted { margin-top: 1px; }
 .setrow {
@@ -538,7 +565,7 @@ function progressView(d) {
   const total7 = d.activity.reduce((s, x) => s + x.count, 0);
 
   return '<div class="brand">' +
-    '<span class="ava">ま</span><span class="bname">MasaGo</span>' +
+    '<span class="ava" aria-hidden="true"></span><span class="bname">MasaGo</span>' +
     '<button class="iconbtn" id="gear" aria-label="账号与设置">' +
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3.2"/><path d="M5.8 18.6c1.3-2.3 3.5-3.6 6.2-3.6s4.9 1.3 6.2 3.6"/></svg>' +
     '</button></div>' +
@@ -759,7 +786,7 @@ function openSettings() {
   const srow = (k, v) =>
     '<div class="setrow"><span>' + k + '</span><b class="num">' + v + '</b></div>';
   sheet.innerHTML = '<div class="grab"></div>' +
-    '<div class="setacct"><span class="ava">ま</span><div>' +
+    '<div class="setacct"><span class="ava" aria-hidden="true"></span><div>' +
     '<b>' + esc(name) + '</b>' +
     '<div class="muted">' + (u ? 'Telegram ID ' + esc(String(u.id)) : 'MasaGo 学习助手') + '</div>' +
     '</div></div>' +

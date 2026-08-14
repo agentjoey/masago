@@ -24,7 +24,8 @@
     "build:sentences": "tsx scripts/build-sentences.ts",
     "build:kana-audio": "tsx --env-file=.env scripts/build-kana-audio.ts",
     "eval:judge": "tsx --env-file=.env scripts/eval-judge.ts",
-    "build:domain": "tsx scripts/build-domain-vocab.ts"
+    "build:domain": "tsx scripts/build-domain-vocab.ts",
+    "build:brand": "tsx scripts/build-brand-asset.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",

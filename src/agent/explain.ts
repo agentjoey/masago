@@ -24,10 +24,23 @@ export interface ExplainTarget {
   readonly mistake?: string;
 }
 
+export interface LlmUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly cacheReadTokens: number;
+  readonly cacheWriteTokens: number;
+  readonly requestId?: string;
+}
+
 export interface ExplainOptions {
   readonly client: AnthropicClientLike;
   readonly model: string;
   readonly maxTokens?: number;
+  /**
+   * 消費した token の通知。呼び出し側が usage_records に落とす。
+   * ここで捨てると /explain の費用が /cost から消える（実測で消えていた）。
+   */
+  readonly onUsage?: (usage: LlmUsage) => void;
 }
 
 const SYSTEM = [
@@ -63,6 +76,13 @@ export async function explain(
     max_tokens: options.maxTokens ?? 600,
     system: [{ type: 'text', text: SYSTEM }],
     messages: [{ role: 'user', content: lines.join('\n') }],
+  });
+  options.onUsage?.({
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+    cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+    cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
+    requestId: response.id,
   });
 
   const text = response.content

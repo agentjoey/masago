@@ -232,3 +232,121 @@ describe.skipIf(!HAS_DB)('text turn degradation', () => {
     },
   );
 });
+
+describe.skipIf(!HAS_DB)('LLM の計量（文字経路）', () => {
+  /**
+   * 音声経路は最初から記録していたが、文字経路には無かった。音声入力は
+   * 既定で無効なので、**主経路の会話が一度も usage_records に落ちて
+   * いなかった**——実測 0 行。/cost と §12 の予算護欄はこの記録の上に
+   * 建っている。
+   */
+  it('records the tokens a successful turn consumed', { timeout: 60000 }, async () => {
+    const { db, textTurn } = need();
+    messageId += 1;
+    const recorded: unknown[] = [];
+
+    const tutor = {
+      name: 'minimax',
+      model: 'MiniMax-M3',
+      respond: () =>
+        Promise.resolve({
+          replyText: 'こんにちは。',
+          provider: 'minimax',
+          model: 'MiniMax-M3',
+          usage: {
+            inputTokens: 1200,
+            outputTokens: 340,
+            cacheReadTokens: 800,
+            cacheWriteTokens: 0,
+            requestId: 'req-usage-1',
+          },
+          detectedIssues: [],
+        }),
+    } as unknown as Parameters<Modules['textTurn']['runTextTurn']>[0]['tutor'];
+
+    const result = await textTurn.runTextTurn(
+      {
+        executor: db,
+        tutor,
+        corrections,
+        logger: fakeLogger(),
+        recordUsage: (usage) => {
+          recorded.push(usage);
+          return Promise.resolve();
+        },
+      },
+      { sessionId, telegramMessageId: messageId, text: 'こんにちは' },
+    );
+
+    expect(result.degraded).not.toBe(true);
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]).toMatchObject({
+      provider: 'minimax',
+      model: 'MiniMax-M3',
+      operation: 'llm',
+      inputTokens: 1200,
+      outputTokens: 340,
+      cacheReadTokens: 800,
+      success: true,
+      requestId: 'req-usage-1',
+      turnId: result.turnId,
+    });
+  });
+
+  it('records the failure too, and still answers', { timeout: 60000 }, async () => {
+    const { db, textTurn } = need();
+    messageId += 1;
+    const recorded: { success: boolean; errorCode?: string }[] = [];
+
+    const result = await textTurn.runTextTurn(
+      {
+        executor: db,
+        tutor: throwingTutor(
+          Object.assign(new Error('boom'), { name: 'TutorRequestError' }),
+        ),
+        corrections,
+        logger: fakeLogger(),
+        recordUsage: (usage) => {
+          recorded.push({ success: usage.success, errorCode: usage.errorCode });
+          return Promise.resolve();
+        },
+      },
+      { sessionId, telegramMessageId: messageId, text: 'また落ちた' },
+    );
+
+    expect(result.degraded).toBe(true);
+    expect(recorded).toEqual([
+      { success: false, errorCode: 'TutorRequestError' },
+    ]);
+  });
+
+  /** 計量が書けなくても返事は返す——記録のために会話を止めない。 */
+  it('still answers when recording itself fails', { timeout: 60000 }, async () => {
+    const { db, textTurn } = need();
+    messageId += 1;
+
+    const tutor = {
+      respond: () =>
+        Promise.resolve({
+          replyText: 'はい。',
+          provider: 'minimax',
+          model: 'MiniMax-M3',
+          usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          detectedIssues: [],
+        }),
+    } as unknown as Parameters<Modules['textTurn']['runTextTurn']>[0]['tutor'];
+
+    const result = await textTurn.runTextTurn(
+      {
+        executor: db,
+        tutor,
+        corrections,
+        logger: fakeLogger(),
+        recordUsage: () => Promise.reject(new Error('usage db down')),
+      },
+      { sessionId, telegramMessageId: messageId, text: 'テスト' },
+    );
+
+    expect(result.reply).toBe('はい。');
+  });
+});

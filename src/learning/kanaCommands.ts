@@ -32,7 +32,6 @@ import type { Random } from '../curriculum/quiz.js';
 import { vocabOfKey } from '../curriculum/vocab.js';
 import type { Executor } from '../db/repositories/executor.js';
 import * as learnerProfiles from '../db/repositories/learnerProfiles.js';
-import * as learningEvents from '../db/repositories/learningEvents.js';
 import * as reviewQueue from '../db/repositories/reviewQueue.js';
 import {
   decodeAnswer,
@@ -45,6 +44,7 @@ import {
   targetOfQuestionText,
   targetOfVocabQuestionText,
 } from './kanaDrill.js';
+import { remainingNewToday as remainingNewTodayOf } from './dailyCap.js';
 import { introduceKana, planKanaLesson } from './kanaSession.js';
 import {
   gradeVocabChoice,
@@ -196,26 +196,16 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
     backlogThreshold: deps.backlogThreshold,
   };
 
-  /**
-   * 今日まだ出してよい新出の数。
-   *
-   * 上限は「一回で出す数」ではなく「その日に出した総数」で効かせる。
-   * そうしないと `/kana` を五回叩けば五日分が一日で入り、翌日以降の
-   * 復習が雪だるまになる（実測で確認）。
-   */
-  async function remainingNewToday(
+  /** 今日まだ出してよい新出の数。数え方は dailyCap.ts に一本化。 */
+  function remainingNewToday(
     learnerId: string,
     now: Date,
-    type: 'KANA' | 'VOCABULARY',
+    type: 'KANA' | 'VOCABULARY' | 'GRAMMAR',
   ): Promise<number> {
-    if (deps.dayStart === undefined) return deps.newPerDay;
-    const already = await learningEvents.countIntroducedSince(
-      executor,
-      learnerId,
-      deps.dayStart(now),
-      type,
-    );
-    return Math.max(0, deps.newPerDay - already);
+    return remainingNewTodayOf(executor, learnerId, now, type, {
+      newPerDay: deps.newPerDay,
+      ...(deps.dayStart === undefined ? {} : { dayStart: deps.dayStart }),
+    });
   }
 
   async function learnerIdOf(
@@ -310,7 +300,9 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
     const next = await nextReadingQuestion(executor, learnerId, {
       optionCount: deps.optionCount,
       random: deps.random,
-      kind: readingKindFor(answered),
+      // 向きは乱数で決める。answered を渡していた頃は二問目以降が
+      // 全部 JA_TO_ZH に固定されていた（呼び出し側が定数 1 を渡していた）。
+      kind: readingKindFor(deps.random()),
     });
     if (next === undefined) return [{ text: renderDrillFinished(answered) }];
     return [
@@ -745,8 +737,11 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         ];
       }
 
+      // 助詞にも一日の新出上限を効かせる。効かせないと /write を三回
+      // 叩くだけで 12 項が一日で入る——仮名で直した取りこぼし（§2.5）と
+      // 同じ形が、新しい型でそのまま再発していた。
       const lesson = await planWritingSession(executor, learnerId, now, {
-        newPerDay: deps.newPerDay,
+        newPerDay: await remainingNewToday(learnerId, now, 'GRAMMAR'),
         maxReviews: deps.maxReviews,
       });
 

@@ -5,6 +5,7 @@ import {
 import type { Executor } from '../db/index.js';
 import { turnsRepo } from '../db/index.js';
 import type { Logger } from '../observability/index.js';
+import type { UsageRecordInput } from '../usage/index.js';
 import type { HintLevel, ModePolicy } from './modes.js';
 import type { Tutor, TutorResponse } from './voiceTurn.js';
 
@@ -41,6 +42,15 @@ export interface TextTurnDeps {
     text: string,
     detected: readonly { original: string }[],
   ) => Promise<void>;
+  /**
+   * LLM の計量。無ければ記録しない。
+   *
+   * 音声経路（voiceTurn）は最初から記録していたが、**文字経路には無かった**。
+   * 音声入力は既定で無効なので、主経路の会話が一度も usage_records に
+   * 落ちていなかった——実測 0 行。/cost と §12 の予算護欄はこの記録の
+   * 上に建っているので、無いと全部が見かけ上 $0 になる。
+   */
+  recordUsage?: (usage: UsageRecordInput) => Promise<void>;
 }
 
 export interface TextTurnInput {
@@ -105,6 +115,7 @@ export async function runTextTurn(
         : {}),
     });
     let response: TutorResponse;
+    const askedAt = Date.now();
     try {
       response = await deps.tutor.respond({
         rawTranscript: input.text,
@@ -138,6 +149,21 @@ export async function runTextTurn(
         error,
         ...(detail === undefined ? {} : { validationErrors: detail }),
       });
+      // 失敗も数える。呼んだ以上は失敗にも意味がある（率を見るため）。
+      // 記録できなくても返事は返す——計量のために会話を止めない。
+      try {
+        await deps.recordUsage?.({
+          provider: deps.tutor.name ?? 'llm',
+          model: deps.tutor.model ?? 'unknown',
+          operation: 'llm',
+          turnId: turn.id,
+          latencyMs: Date.now() - askedAt,
+          success: false,
+          errorCode: error instanceof Error ? error.name : 'Error',
+        });
+      } catch (recordError) {
+        deps.logger?.warn('could not record failed llm usage', { recordError });
+      }
       // ターンは既に作ってある。ここで放り出すと未完了のまま残るので、
       // FAILED として閉じてから定型文を返す。
       await turnsRepo.updateStatus(deps.executor, turn.id, 'FAILED', {
@@ -149,6 +175,24 @@ export async function runTextTurn(
         degraded: true,
       };
     }
+    try {
+      await deps.recordUsage?.({
+        provider: response.provider,
+        model: response.model,
+        operation: 'llm',
+        turnId: turn.id,
+        inputTokens: response.usage.inputTokens,
+        outputTokens: response.usage.outputTokens,
+        cacheReadTokens: response.usage.cacheReadTokens,
+        cacheWriteTokens: response.usage.cacheWriteTokens,
+        latencyMs: Date.now() - askedAt,
+        success: true,
+        requestId: response.usage.requestId,
+      });
+    } catch (recordError) {
+      deps.logger?.warn('could not record llm usage', { recordError });
+    }
+
     if (retryHooks !== undefined && retryPreparation !== undefined) {
       await retryHooks.finalizeTurnCorrections({
         retryEvaluation: {

@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
+import type { LlmUsage } from './explain.js';
 import type { AnthropicClientLike } from './llm/types.js';
 
 /**
@@ -100,6 +101,11 @@ export interface JudgeCompositionOptions {
    * 「判定できなかった」として扱えばよい。運用で原因を見るための口。
    */
   readonly onError?: (error: unknown, willRetry: boolean) => void;
+  /**
+   * 消費した token の通知。応答が返るたびに一度呼ぶ——再試行で二度目の
+   * 応答が返れば二度呼ばれる。どちらも課金されている。
+   */
+  readonly onUsage?: (usage: LlmUsage) => void;
 }
 
 /**
@@ -136,6 +142,15 @@ export async function judgeComposition(
     });
 
   const mayRetry = options.retry ?? true;
+  const reportUsage = (response: Anthropic.Message): void => {
+    options.onUsage?.({
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
+      cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
+      requestId: response.id,
+    });
+  };
   let response: Anthropic.Message;
   try {
     response = await ask();
@@ -149,6 +164,7 @@ export async function judgeComposition(
       return undefined;
     }
   }
+  reportUsage(response);
 
   // text ブロックと tool_use が同時に返ることがある（実測）。
   // content[0] を仮定せず探す。

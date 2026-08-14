@@ -271,3 +271,32 @@ describe.skipIf(!HAS_DB)('書く練習の駆動', () => {
     expect(question?.pieces.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe.skipIf(!HAS_DB)('助詞の一日上限', () => {
+  /**
+   * /write は一回の呼び出しごとに newPerDay 個を導入していた——仮名で
+   * 直した「上限が一回あたりに効く」取りこぼし（§2.5）が、新しい型で
+   * そのまま再発していた。数え方は dailyCap.ts に一本化してある。
+   */
+  it('counts what was already introduced today', async () => {
+    const { db } = need();
+    const { remainingNewToday } = await import(
+      '../../src/learning/dailyCap.js'
+    );
+    // beforeAll〜ここまでで 3 項導入済み（introduces particles a few at a time）
+    const dayStart = (): Date => new Date(NOW.getTime() - 60 * 60 * 1000);
+    const remaining = await remainingNewToday(db, learnerId, NOW, 'GRAMMAR', {
+      newPerDay: 5,
+      dayStart,
+    });
+    expect(remaining).toBe(2);
+
+    // 日界を跨げば戻る
+    const nextDay = new Date(NOW.getTime() + 24 * 60 * 60 * 1000);
+    const fresh = await remainingNewToday(db, learnerId, nextDay, 'GRAMMAR', {
+      newPerDay: 5,
+      dayStart: () => new Date(nextDay.getTime() - 60 * 60 * 1000),
+    });
+    expect(fresh).toBe(5);
+  });
+});

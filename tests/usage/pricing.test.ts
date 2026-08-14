@@ -232,3 +232,27 @@ describe('estimateCost', () => {
     expect(total).toBe(75_000);
   });
 });
+
+describe('MiniMax-M3 の価格', () => {
+  /**
+   * この行が無かった間、LLM の記録は全部「価格不明」になる運命だった
+   * ——実際には記録自体も落ちていて usage_records は 0 行だったが、
+   * どちらか片方だけ直しても /cost は $0 のまま。
+   */
+  it('prices a text-path llm call', () => {
+    const estimate = estimateCost(
+      {
+        provider: 'minimax',
+        model: 'MiniMax-M3',
+        operation: 'llm',
+        inputTokens: 1_000_000,
+        outputTokens: 100_000,
+        cacheReadTokens: 500_000,
+      },
+      new Date('2026-08-15T00:00:00Z'),
+    );
+    if (estimate.status !== 'priced') throw new Error('expected priced');
+    // 入力 $0.30 + 出力 $0.12 + キャッシュ読み $0.03（入力の 1/5）
+    expect(estimate.amountMicroUsd).toBe(450_000);
+  });
+});

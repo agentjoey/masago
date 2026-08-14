@@ -63,9 +63,15 @@ function reply(payload: unknown): {
   content: { type: 'text'; text: string }[];
   structuredContent: Record<string, unknown>;
 } {
+  // structuredContent はオブジェクトでなければならない。学習者が未登録の
+  // とき handlers は null を返すので、そのまま流すと形の合わない応答になる。
+  const structured =
+    payload !== null && typeof payload === 'object'
+      ? (payload as Record<string, unknown>)
+      : { value: payload ?? null };
   return {
     content: [{ type: 'text', text: JSON.stringify(payload) }],
-    structuredContent: payload as Record<string, unknown>,
+    structuredContent: structured,
   };
 }
 
@@ -378,6 +384,12 @@ export async function handleMcpRequest(
   const server = createMcpServer(options);
   // sessionIdGenerator を渡さない＝無状態。要求ごとに完結する。
   const transport = new StreamableHTTPServerTransport();
+  // 後始末は**要求を処理する前に**取り付ける。handleRequest の後に付けると、
+  // 応答が先に閉じていたとき 'close' は二度と来ず、transport が残る。
+  res.on('close', () => {
+    void transport.close();
+    void server.close();
+  });
   try {
     await server.connect(transport);
     const body = req.method === 'POST' ? await readBody(req) : undefined;
@@ -388,13 +400,6 @@ export async function handleMcpRequest(
       res.writeHead(500, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: 'internal' }));
     }
-  } finally {
-    // 要求が終わったら必ず閉じる。閉じ忘れると SSE のストリームが
-    // 残って、プロセスが落ちるまで溜まり続ける。
-    res.on('close', () => {
-      void transport.close();
-      void server.close();
-    });
   }
   return true;
 }

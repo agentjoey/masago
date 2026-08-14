@@ -317,6 +317,9 @@ export async function handleIncomingMessage(
       ...(deps.reflowVocabulary !== undefined
         ? { reflowVocabulary: deps.reflowVocabulary }
         : {}),
+      ...(deps.voice?.recordUsage !== undefined
+        ? { recordUsage: deps.voice.recordUsage }
+        : {}),
     },
     {
       sessionId: session.id,

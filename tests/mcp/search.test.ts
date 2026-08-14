@@ -161,3 +161,27 @@ describe('knowledgeKeyOf', () => {
     expect(knowledgeKeyOf('issue:abc')).toBeUndefined();
   });
 });
+
+describe('例文の完全一致', () => {
+  /**
+   * 以前は「候補が枠の 4 倍たまったら打ち切り」で走査していたので、
+   * 完全一致がプールの後方にあると部分一致 12 件の後ろで切られて
+   * 出てこなかった。全文を見る（走査は includes だけで 1ms 台）。
+   */
+  it('returns the exact sentence first, wherever it sits in the pool', async () => {
+    const { SENTENCES } = await import('../../src/curriculum/sentences.js');
+    // 25 件おきに実際の本文で引く。前方も後方も踏む。
+    for (let index = 0; index < SENTENCES.length; index += 25) {
+      const target = SENTENCES[index];
+      if (target === undefined) continue;
+      const hits = searchCurriculum(target.text, { baseUrl: BASE, limit: 20 });
+      const sentences = hits.filter((hit) => hit.kind === 'sentence');
+      expect(
+        sentences.map((hit) => hit.id),
+        `${String(index)}: ${target.text}`,
+      ).toContain(`sentence:${target.id}`);
+      // 同文の重複投稿が先に来ることはあっても、完全一致（100 点）が先頭。
+      expect(sentences[0]?.score, target.text).toBe(100);
+    }
+  });
+});

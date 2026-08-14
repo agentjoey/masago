@@ -75,3 +75,50 @@ describe('speak', () => {
     expect(result.fileId).toBeUndefined();
   });
 });
+
+describe('計量の通し（/cost の材料）', () => {
+  /**
+   * 合成の usage をここで捨てていたせいで、単語カードの読み上げは
+   * 一度も記録されていなかった（usage_records 0 行の一因）。
+   */
+  it('passes the synthesis usage through on a cache miss', async () => {
+    const spoken = await speak('ほん', {
+      cache: {
+        lookup: () => Promise.resolve(undefined),
+        remember: () => Promise.resolve(),
+      },
+      tts: {
+        name: 'minimax',
+        model: 'speech-2.8-hd',
+        outputFormat: 'mp3',
+        synthesize: () =>
+          Promise.resolve({
+            bytes: Buffer.from('mp3'),
+            format: 'mp3',
+            provider: 'minimax',
+            model: 'speech-2.8-hd',
+            usage: { characters: 2, requestId: 'req-9' },
+          }),
+      } as never,
+      voiceId: 'v',
+    });
+    expect(spoken.usage).toEqual({ characters: 2, requestId: 'req-9' });
+    expect(spoken.provider).toBe('minimax');
+    expect(spoken.model).toBe('speech-2.8-hd');
+  });
+
+  it('reports no usage on a cache hit — nothing was synthesized', async () => {
+    const spoken = await speak('ほん', {
+      cache: {
+        lookup: () => Promise.resolve('file-id-1'),
+        remember: () => Promise.resolve(),
+      },
+      tts: {
+        synthesize: () => Promise.reject(new Error('must not be called')),
+      } as never,
+      voiceId: 'v',
+    });
+    expect(spoken.fileId).toBe('file-id-1');
+    expect(spoken.usage).toBeUndefined();
+  });
+});

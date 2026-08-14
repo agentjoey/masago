@@ -76,13 +76,15 @@ export interface ReadingQuestion {
 }
 
 /**
- * 出題形式は段を上げる。
+ * 出題の向き。三問に一問は中国語→日本語を混ぜる。
  *
- * まず日本語を見せて意味を選ばせる（読めるかどうかを測る）。慣れたら
- * 中国語から日本語を選ばせる——こちらのほうが難しく、書くことに近づく。
+ * 以前は「何問目か」で回していたが、bot は問題を跨いで数を持たない
+ * （持たない設計）ので、呼び出し側が定数を渡して**二問目以降が全部
+ * 日→中に固定**されていた。数えられないなら乱数でよい——roll は
+ * 呼び出し側の Random から渡す。
  */
-export function readingKindFor(answered: number): SentenceQuestionKind {
-  return answered % 3 === 2 ? 'ZH_TO_JA' : 'JA_TO_ZH';
+export function readingKindFor(roll: number): SentenceQuestionKind {
+  return roll < 1 / 3 ? 'ZH_TO_JA' : 'JA_TO_ZH';
 }
 
 export interface ReadingOptions {

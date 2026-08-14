@@ -56,10 +56,16 @@ describe('nextReadingQuestion の出題', () => {
     expect(readable).toBeGreaterThan(30);
   });
 
-  it('alternates the direction so the learner both reads and produces', () => {
-    const kinds = [0, 1, 2, 3, 4, 5].map(readingKindFor);
-    expect(kinds).toContain('JA_TO_ZH');
-    expect(kinds).toContain('ZH_TO_JA');
+  /**
+   * 向きは乱数で決める。「何問目か」で回していた頃は、bot が問題を
+   * 跨いで数を持たないため定数が渡り、**二問目以降が全部 日→中に
+   * 固定**されていた。
+   */
+  it('mixes in the harder direction about a third of the time', () => {
+    expect(readingKindFor(0)).toBe('ZH_TO_JA');
+    expect(readingKindFor(0.32)).toBe('ZH_TO_JA');
+    expect(readingKindFor(0.34)).toBe('JA_TO_ZH');
+    expect(readingKindFor(0.99)).toBe('JA_TO_ZH');
   });
 });
 

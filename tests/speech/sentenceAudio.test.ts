@@ -117,3 +117,28 @@ describe('例文の読み上げキャッシュ', () => {
     });
   });
 });
+
+describe('計量の通知', () => {
+  it('reports each synthesis exactly once, never for cache hits', async () => {
+    const seen: number[] = [];
+    const synthesize = vi.fn(async (text: string) => ({
+      bytes: Buffer.from(`audio:${text}`),
+      format: 'mp3' as const,
+      provider: 'minimax',
+      model: 'speech-2.8-hd',
+      usage: { characters: text.length },
+    }));
+    const cache = createSentenceAudioCache({
+      tts: { synthesize } as never,
+      voiceId: 'v',
+      onSynthesized: (result) => seen.push(result.usage.characters),
+    });
+
+    await cache.get('1', 'これはテストです。');
+    await cache.get('1', 'これはテストです。');
+    await cache.get('1', 'これはテストです。');
+
+    expect(synthesize).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual(['これはテストです。'.length]);
+  });
+});

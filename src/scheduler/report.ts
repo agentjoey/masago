@@ -5,7 +5,7 @@ import {
   type ReportPeriod,
 } from '../curriculum/report.js';
 import type { Logger } from '../observability/index.js';
-import { localDateKey, nextWeeklyOccurrence } from './dailyTime.js';
+import { nextWeeklyOccurrence, partsInZone } from './dailyTime.js';
 
 /**
  * 週報・月報（V1.5）。
@@ -54,8 +54,6 @@ export function createReportScheduler(deps: ReportDeps): ReportScheduler {
   let timer: NodeJS.Timeout | undefined;
   let scheduled: Date | undefined;
   let stopped = false;
-  /** 最後に月報を出した月（"2026-08"）。同じ月に二度出さない。 */
-  let lastMonthlySent: string | undefined;
 
   async function one(
     period: ReportPeriod,
@@ -84,14 +82,19 @@ export function createReportScheduler(deps: ReportDeps): ReportScheduler {
       const weekly = await one('WEEK', at);
       if (weekly !== undefined) decisions.push(weekly);
 
-      // 月が変わっていたら月報も。同じ月に二度は出さない。
-      const month = localDateKey(at, deps.timeZone).slice(0, 7);
-      if (lastMonthlySent !== month) {
+      /**
+       * 月報は「その月の最初の週次発火」に相乗りする。週に一度の発火なら、
+       * 月初の 7 日間にちょうど一度だけ入る——日付だけで決まる。
+       *
+       * 以前は「最後に送った月」をメモリに持っていたが、再起動で消える。
+       * デプロイのたびに忘れて、**次の週次発火で毎回月報も送っていた**
+       * ことになる——このプロジェクトのデプロイ頻度だと月報がほぼ週報化する。
+       * プロセスの外に覚えさせるか、覚えなくても決まる形にするかの二択で、
+       * 後者を取った（§9.1: この用途だけの列を DB に足すほどではない）。
+       */
+      if (partsInZone(at, deps.timeZone).day <= 7) {
         const monthly = await one('MONTH', at);
-        if (monthly !== undefined) {
-          decisions.push(monthly);
-          lastMonthlySent = month;
-        }
+        if (monthly !== undefined) decisions.push(monthly);
       }
     } catch (error) {
       // 一回落としても次の予定は必ず組み直す。ここで投げるとタイマーが

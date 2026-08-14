@@ -28,6 +28,7 @@ import { createSentenceAudioCache } from './speech/sentenceAudio.js';
 import { collectReminderFacts } from './learning/reminderFacts.js';
 import { collectReportFacts } from './learning/reportFacts.js';
 import { reflowVocabulary } from './learning/vocabReflow.js';
+import { remainingNewToday } from './learning/dailyCap.js';
 import { createDailyReminder, createReportScheduler } from './scheduler/index.js';
 import {
   localDateKey,
@@ -309,6 +310,15 @@ async function runStartupChecks(): Promise<{ dbRoundTripMs: number }> {
   return { dbRoundTripMs };
 }
 
+/** 学習者の地域時間での「その日の 0 時」。新出上限の日界（§2.5）。 */
+function learnerDayStart(now: Date): Date {
+  const parts = partsInZone(now, config.session.userTimezone);
+  return zonedWallClockToInstant(
+    { ...parts, hour: 0, minute: 0 },
+    config.session.userTimezone,
+  );
+}
+
 const kanaCommands = createKanaCommands({
   executor: db,
   now: () => new Date(),
@@ -319,13 +329,7 @@ const kanaCommands = createKanaCommands({
   maxReviews: config.kana.maxReviews,
   backlogThreshold: config.kana.backlogThreshold,
   // 学習者の地域時間の 0 時。一日の新出上限をここで区切る。
-  dayStart: (now: Date) => {
-    const parts = partsInZone(now, config.session.userTimezone);
-    return zonedWallClockToInstant(
-      { ...parts, hour: 0, minute: 0 },
-      config.session.userTimezone,
-    );
-  },
+  dayStart: learnerDayStart,
   /**
    * 作文の判定。**規則層で決まる分は模型を呼ばない**——同じ入力に
    * 同じ答えが返り、費用もかからない（§1.5 / scenario-learning.md §5）。
@@ -337,6 +341,29 @@ const kanaCommands = createKanaCommands({
       const verdict = await judgeComposition(input, {
         client: llmClient,
         model: config.llm.model,
+        onUsage: (usage) => {
+          void recordUsage(usageRecorder, {
+            provider: config.llm.provider,
+            model: config.llm.model,
+            operation: 'llm',
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+            cacheReadTokens: usage.cacheReadTokens,
+            cacheWriteTokens: usage.cacheWriteTokens,
+            success: true,
+            requestId: usage.requestId,
+          });
+        },
+        onError: (error, willRetry) => {
+          if (willRetry) return;
+          void recordUsage(usageRecorder, {
+            provider: config.llm.provider,
+            model: config.llm.model,
+            operation: 'llm',
+            success: false,
+            errorCode: error instanceof Error ? error.name : 'Error',
+          });
+        },
       });
       return verdict;
     },
@@ -373,6 +400,19 @@ const kanaCommands = createKanaCommands({
     const result = await explain(target, {
       client: llmClient,
       model: config.llm.model,
+      onUsage: (usage) => {
+        void recordUsage(usageRecorder, {
+          provider: config.llm.provider,
+          model: config.llm.model,
+          operation: 'llm',
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          cacheReadTokens: usage.cacheReadTokens,
+          cacheWriteTokens: usage.cacheWriteTokens,
+          success: true,
+          requestId: usage.requestId,
+        });
+      },
     });
     return result.text;
   },
@@ -420,8 +460,8 @@ const bot = createBot({
     audioDir: config.kana.audioDir,
     // 単語の読み上げ。一度送れば file_id で使い回すので、同じ語の
     // 二度目以降は合成費用がかからない（§5.3）。
-    speak: (text) =>
-      speak(text, {
+    speak: async (text) => {
+      const spoken = await speak(text, {
         cache: {
           lookup: (value) =>
             ttsCacheRepo.lookup(
@@ -436,7 +476,20 @@ const bot = createBot({
         },
         tts,
         voiceId: config.tts.minimaxVoiceId,
-      }),
+      });
+      // 合成した回だけ計量する。キャッシュ命中は費用ゼロ。
+      if (spoken.usage !== undefined) {
+        void recordUsage(usageRecorder, {
+          provider: spoken.provider ?? 'minimax',
+          model: spoken.model ?? config.tts.modelTeaching,
+          operation: 'tts',
+          ttsCharacters: spoken.usage.characters,
+          success: true,
+          requestId: spoken.usage.requestId,
+        });
+      }
+      return spoken;
+    },
     rememberVoice: (text, fileId) =>
       ttsCacheRepo.remember(db, {
         cacheKey: ttsCacheRepo.ttsCacheKey(
@@ -535,13 +588,25 @@ const mcpConfig =
             const learnerId = await findLearnerId(db, config.telegram.allowedUserId);
             if (learnerId === undefined) return null;
             const now = new Date();
-            const plan = {
+            // 一日の新出上限を bot の /today と同じ数え方で効かせる。
+            // 効かせないと、ChatGPT は「新しい仮名 5 個」と言い、bot は
+            // 「今日はもう終わり」と言う——同じ質問に違う答えが出る。
+            const capOptions = {
               newPerDay: config.kana.newPerDay,
+              dayStart: learnerDayStart,
+            };
+            const base = {
               maxReviews: config.kana.maxReviews,
               backlogThreshold: config.kana.backlogThreshold,
             };
-            const kana = await planKanaLesson(db, learnerId, now, plan);
-            const vocab = await planVocabSession(db, learnerId, now, plan);
+            const kana = await planKanaLesson(db, learnerId, now, {
+              ...base,
+              newPerDay: await remainingNewToday(db, learnerId, now, 'KANA', capOptions),
+            });
+            const vocab = await planVocabSession(db, learnerId, now, {
+              ...base,
+              newPerDay: await remainingNewToday(db, learnerId, now, 'VOCABULARY', capOptions),
+            });
             return {
               newKana: kana.newKana.map((item) => item.hiragana),
               kanaDue: kana.dueTotal,
@@ -595,6 +660,16 @@ const healthServer = startMiniAppServer({
   sentenceAudio: createSentenceAudioCache({
     tts,
     voiceId: config.tts.minimaxVoiceId,
+    onSynthesized: (result) => {
+      void recordUsage(usageRecorder, {
+        provider: result.provider,
+        model: result.model,
+        operation: 'tts',
+        ttsCharacters: result.usage.characters,
+        success: true,
+        requestId: result.usage.requestId,
+      });
+    },
   }),
   ...(mcpConfig === undefined ? {} : { mcp: mcpConfig }),
   handlers: {

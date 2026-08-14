@@ -122,6 +122,11 @@ export function buildWritingQuestion(
     if (blank === undefined) return undefined;
     const particle = PARTICLE_BY_ID.get(blank.particleId);
     if (particle === undefined) return undefined;
+    // 空欄の位置が復元できない文は出さない。undefined のまま通すと、
+    // 呼び出し側で「空の語順問題」として描画される——選択肢も断片も
+    // 無い問題が届く。出せないなら次の形式に譲る。
+    const blankAt = blankIndexOf(sentence, blank.prompt);
+    if (blankAt === undefined) return undefined;
     return {
       kind,
       sentenceId: sentence.id,
@@ -129,7 +134,7 @@ export function buildWritingQuestion(
       options: blank.options,
       pieces: [],
       particle,
-      blankAt: blankIndexOf(sentence, blank.prompt),
+      blankAt,
     };
   }
 

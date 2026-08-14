@@ -627,6 +627,13 @@ ChatGPT Plus 支持 Developer Mode 接入自定义 MCP（远程 HTTPS 端点、S
 
 每次调用产生 usage record，`/cost` 按日/周/月聚合，价目表带 `effective_from` 版本、历史成本按调用时价格计算。
 
+> **2026-08-14 修正：上面这句话在此日期之前是假的。** code review 时查线上库，
+> `usage_records` 一共 **0 行**——记录只接在语音管线上，而语音输入默认关闭；
+> 文字对话、/explain、/compose 判分、单词卡 TTS、例句朗读全都没记。
+> 且价目表里没有 MiniMax-M3 条目，即使记了也是「价格不明」。两处都已补上
+> （文字轮次入库 + 全部 LLM/TTS 调用点接线 + M3 价目 $0.30/$1.20 per M）。
+> 在此之前 /cost 显示的 ≈$0 不是「便宜」，是「没在看」。
+
 ---
 
 # 13. 路线图

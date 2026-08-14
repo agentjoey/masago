@@ -146,9 +146,12 @@ export function searchCurriculum(
   hits.sort((a, b) => b.score - a.score);
   const roomForSentences = Math.max(limit - hits.length, 3);
 
+  // 全 3,500 文を見る。以前は「候補が枠の 4 倍たまったら打ち切り」に
+  // していたが、完全一致がプールの後方にあると**部分一致 12 件を集めた
+  // 時点で打ち切られて出てこない**。走査は文字列 includes だけなので、
+  // 全部見ても 1ms 台——打ち切りで守るものが無い。
   const sentenceHits: SearchHit[] = [];
   for (const sentence of SENTENCES) {
-    if (sentenceHits.length >= roomForSentences * 4) break;
     const score = best([sentence.text, sentence.zh ?? ''], needle);
     if (score === 0) continue;
     sentenceHits.push({

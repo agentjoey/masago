@@ -208,7 +208,11 @@ describe('spanLabel', () => {
 });
 
 describe('createReportScheduler', () => {
-  function scheduler(collect: ReturnType<typeof vi.fn>, send = vi.fn()) {
+  function scheduler(
+    collect: ReturnType<typeof vi.fn>,
+    send = vi.fn(),
+    at = '2026-08-14T04:00:00Z',
+  ) {
     return createReportScheduler({
       logger: silentLogger,
       weekday: 0,
@@ -216,29 +220,43 @@ describe('createReportScheduler', () => {
       timeZone: 'Asia/Singapore',
       collect,
       send,
-      now: () => new Date('2026-08-14T04:00:00Z'),
+      now: () => new Date(at),
       setTimer: (() => 0) as never,
       clearTimer: () => {},
     });
   }
 
-  it('sends the weekly report and the monthly one on the first run', async () => {
+  /**
+   * 月報は「その月の最初の週次発火」（＝月初 7 日間）に相乗りする。
+   * 日付だけで決まるので、プロセスが何度再起動しても揺れない。
+   */
+  it('adds the monthly report during the first week of the month', async () => {
     const send = vi.fn();
     const collect = vi.fn().mockResolvedValue(facts());
-    const decisions = await scheduler(collect, send).runOnce();
+    // 2026-08-02 は 8 月最初の日曜。
+    const decisions = await scheduler(collect, send, '2026-08-02T12:00:00Z').runOnce();
     expect(collect.mock.calls.map((call) => call[0])).toEqual(['WEEK', 'MONTH']);
     expect(decisions).toHaveLength(2);
     expect(send).toHaveBeenCalledTimes(2);
   });
 
-  /** 同じ月に月報を二度出さない。 */
-  it('sends the monthly report once per month', async () => {
+  it('sends only the weekly report later in the month', async () => {
     const collect = vi.fn().mockResolvedValue(facts());
-    const scheduled = scheduler(collect);
-    await scheduled.runOnce();
-    collect.mockClear();
-    await scheduled.runOnce();
+    await scheduler(collect, vi.fn(), '2026-08-14T04:00:00Z').runOnce();
     expect(collect.mock.calls.map((call) => call[0])).toEqual(['WEEK']);
+  });
+
+  /**
+   * 再起動しても月報が重複しない。以前は「最後に送った月」をメモリに
+   * 持っていて、**デプロイのたびに忘れて次の週次発火で毎回月報も
+   * 送っていた**——このプロジェクトのデプロイ頻度だと月報がほぼ週報化する。
+   */
+  it('survives a restart without resending the monthly report', async () => {
+    const collect = vi.fn().mockResolvedValue(facts());
+    // 月の半ばで「再起動直後の別プロセス」を模す——状態は共有していない。
+    await scheduler(collect, vi.fn(), '2026-08-14T04:00:00Z').runOnce();
+    await scheduler(collect, vi.fn(), '2026-08-21T04:00:00Z').runOnce();
+    expect(collect.mock.calls.map((call) => call[0])).toEqual(['WEEK', 'WEEK']);
   });
 
   it('says nothing when there is no learner yet', async () => {

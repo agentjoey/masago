@@ -1,4 +1,4 @@
-import type { TextToSpeechProvider } from './tts/types.js';
+import type { AudioResult, TextToSpeechProvider } from './tts/types.js';
 
 /**
  * 例文の読み上げ（Mini App の阅读タブ）。
@@ -27,6 +27,11 @@ export interface SentenceAudioOptions {
   readonly voiceId: string;
   /** 保持する件数。既定 150（実測 36.8 KB/件 なので約 5.5 MB）。 */
   readonly maxEntries?: number;
+  /**
+   * 合成が走ったときの通知。呼び出し側が usage_records に落とす。
+   * キャッシュ命中では呼ばれない——合成していないので費用も無い。
+   */
+  readonly onSynthesized?: (result: AudioResult) => void;
 }
 
 export interface SentenceAudioCache {
@@ -53,6 +58,7 @@ export function createSentenceAudioCache(
     });
     const bytes = result.bytes;
     if (bytes === undefined) return undefined;
+    options.onSynthesized?.(result);
     entries.set(id, bytes);
     // 古いほうから落とす。
     while (entries.size > max) {

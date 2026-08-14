@@ -167,8 +167,10 @@ export function startMiniAppServer(options: MiniAppServerOptions): Server {
         }
 
         // 例文の音声。要求されたときに合成して覚える。
+        // GET のみ。HEAD に応えるには長さが要り、長さを知るには合成が要る
+        // ——中身を捨てるだけの要求に有料の合成を走らせない。
         if (path.startsWith('/audio/sentence/')) {
-          if (method !== 'GET' && method !== 'HEAD') {
+          if (method !== 'GET') {
             send(res, 405, '', 'text/plain');
             return;
           }

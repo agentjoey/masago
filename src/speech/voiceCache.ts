@@ -1,4 +1,4 @@
-import type { TextToSpeechProvider } from './tts/types.js';
+import type { TextToSpeechProvider, TtsUsage } from './tts/types.js';
 
 /**
  * 「この文を音にして送る」ための最小の窓口（V2 §5.3）。
@@ -19,6 +19,16 @@ export interface SpokenAudio {
   /** 初めての場合の音声本体。 */
   readonly bytes?: Buffer;
   readonly cached: boolean;
+  /**
+   * 合成した場合の計量。呼び出し側が usage_records に落とす。
+   *
+   * ここで捨てていたせいで、単語カードの読み上げは**一度も記録されて
+   * いなかった**（usage_records 0 行の一因）。キャッシュ命中時は合成が
+   * 無いので undefined。
+   */
+  readonly usage?: TtsUsage;
+  readonly provider?: string;
+  readonly model?: string;
 }
 
 export interface SpeakOptions {
@@ -51,5 +61,11 @@ export async function speak(
     // 「音は出せなかった」と分かるほうがよい。
     return { cached: false };
   }
-  return { bytes, cached: false };
+  return {
+    bytes,
+    cached: false,
+    usage: result.usage,
+    provider: result.provider,
+    model: result.model,
+  };
 }

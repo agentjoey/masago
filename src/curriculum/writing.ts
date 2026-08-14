@@ -205,6 +205,14 @@ export interface WordOrder {
   readonly pieces: readonly string[];
   /** 正解の並び。 */
   readonly answer: readonly string[];
+  /**
+   * 助詞で終わる文節か（`answer` と同じ並び）。
+   *
+   * 助詞の付いた文節は文中で比較的自由に動かせるが、助詞の無い文節
+   * ——連体修飾語など——は動かせない。「新しい学校は」の「新しい」を
+   * 後ろへ回すと修飾関係が切れて非文になる。
+   */
+  readonly movable: readonly boolean[];
   readonly full: string;
 }
 
@@ -228,7 +236,13 @@ export function buildWordOrder(
   }
   if (sameOrder(pieces, answer)) return undefined;
 
-  return { sentenceId: sentence.id, pieces, answer, full: sentence.text };
+  return {
+    sentenceId: sentence.id,
+    pieces,
+    answer,
+    movable: chunks.map((chunk) => chunk.particle !== undefined),
+    full: sentence.text,
+  };
 }
 
 function sameOrder(a: readonly string[], b: readonly string[]): boolean {
@@ -269,7 +283,19 @@ export function judgeWordOrder(
 
   // 述語（元の文の最後の文節）が最後に来ているか。
   const predicate = order.answer[order.answer.length - 1];
-  return submitted[submitted.length - 1] === predicate ? 'ACCEPTABLE' : 'WRONG';
+  if (submitted[submitted.length - 1] !== predicate) return 'WRONG';
+
+  // 助詞の無い文節が動いていたら非文。
+  //
+  // 述語が最後に来ていれば何でも許す、では緩すぎる。「新しい学校は
+  // どうですか」の「新しい」を後ろへ回した「学校は新しいどうですか」は
+  // 述語が最後のままだが日本語として成立しない——連体修飾語は
+  // 修飾する語の直前でなければならない。動かせるのは助詞が付いた文節だけ。
+  for (let index = 0; index < order.answer.length; index += 1) {
+    if (order.movable[index] === true) continue;
+    if (submitted[index] !== order.answer[index]) return 'WRONG';
+  }
+  return 'ACCEPTABLE';
 }
 
 /**

@@ -143,6 +143,7 @@ describe('judgeWordOrder — 语序不是唯一的', () => {
     sentenceId: 'x',
     pieces: ['本を', '私は', '読みます。'],
     answer: ['私は', '本を', '読みます。'],
+    movable: [true, true, false],
     full: '私は本を読みます。',
   };
 
@@ -181,5 +182,47 @@ describe('sentence pool', () => {
       expect(sentence.id).toMatch(/^\d+$/);
       expect(sentence.tokens.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('judgeWordOrder — 连体修饰不能移动', () => {
+  // 「新しい」は「学校」を修飾する。後ろへ回すと修飾関係が切れて非文。
+  // 述語が最後に来ているだけでは合格にできない。
+  const order = {
+    sentenceId: 'y',
+    pieces: ['学校は', '新しい', 'どうですか。'],
+    answer: ['新しい', '学校は', 'どうですか。'],
+    movable: [false, true, false],
+    full: '新しい学校はどうですか。',
+  };
+
+  it('accepts the original order', () => {
+    expect(judgeWordOrder(order, ['新しい', '学校は', 'どうですか。'])).toBe(
+      'CORRECT',
+    );
+  });
+
+  it('rejects moving a modifier away from what it modifies', () => {
+    expect(judgeWordOrder(order, ['学校は', '新しい', 'どうですか。'])).toBe(
+      'WRONG',
+    );
+  });
+
+  it('still allows particle-marked phrases to move', () => {
+    const two = {
+      sentenceId: 'z',
+      pieces: [] as string[],
+      answer: ['私は', '毎日', '本を', '読みます。'],
+      movable: [true, false, true, false],
+      full: '私は毎日本を読みます。',
+    };
+    // 私は / 本を は助詞付きなので入れ替え可
+    expect(judgeWordOrder(two, ['私は', '毎日', '本を', '読みます。'])).toBe(
+      'CORRECT',
+    );
+    // 毎日（副詞、助詞なし）を動かすと不可
+    expect(judgeWordOrder(two, ['毎日', '私は', '本を', '読みます。'])).toBe(
+      'WRONG',
+    );
   });
 });

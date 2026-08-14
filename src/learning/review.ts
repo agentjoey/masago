@@ -115,6 +115,14 @@ export async function applyReview(
   outcome: ReviewOutcome,
   now: Date,
   requestRetention: number,
+  /**
+   * 事件の同一性を呼び出し側が決める場合の鍵。
+   *
+   * 既定は「この瞬間の一回」で、出題への解答はそれでよい。会話の中で
+   * 使えた語のように**同じ日に何度でも起こりうる**ものは、日付までを
+   * 鍵にして一日一回に畳む（`recordSpontaneousUse`）。
+   */
+  dedupeKey?: string,
 ): Promise<AppliedReview> {
   const existing = await reviewQueue.findEntry(tx, learnerId, knowledgeItemId);
   const current =
@@ -134,7 +142,8 @@ export async function applyReview(
       knowledgeItemId,
       eventType: eventTypeOf(outcome),
       // 同じ項目を同じ瞬間に二度採点することは無いので、これで一意。
-      dedupeKey: `review:${learnerId}:${knowledgeItemId}:${now.toISOString()}`,
+      dedupeKey:
+        dedupeKey ?? `review:${learnerId}:${knowledgeItemId}:${now.toISOString()}`,
       // 事件の時刻は**答えた時刻**にする。DB の既定値（挿入時刻）に任せると、
       // 後から遡って計算し直すときに実際とずれる（§3.3）。
       createdAt: now,
@@ -151,4 +160,52 @@ export async function applyReview(
   ]);
 
   return { entry, previousState: current.state };
+}
+
+/**
+ * 会話や作文の中で正しく使えた語を記録する（§3.2 の最終行）。
+ *
+ * 出題に答えたのとは違う種類の証拠なので、扱いも変える：
+ *
+ * - **一日一回に畳む。** 同じ語を会話で五回使っても、思い出せた証拠は一つ。
+ *   使うたびに Easy を積むと、目の前の文字を写しただけで間隔が伸びていく
+ * - **キューに無い語は積まない。** まだ習っていない語をたまたま書けたことを
+ *   「復習した」とは数えない。導入は課程の側が決める（§2.4）
+ */
+export async function recordSpontaneousUse(
+  tx: Executor,
+  learnerId: string,
+  knowledgeItemIds: readonly string[],
+  now: Date,
+  requestRetention: number,
+  dayKey: string,
+): Promise<string[]> {
+  const unique = [...new Set(knowledgeItemIds)];
+  if (unique.length === 0) return [];
+
+  const keyOf = (itemId: string): string =>
+    `spontaneous:${learnerId}:${itemId}:${dayKey}`;
+  const already = await learningEvents.existingDedupeKeys(
+    tx,
+    unique.map(keyOf),
+  );
+
+  const recorded: string[] = [];
+  for (const itemId of unique) {
+    if (already.has(keyOf(itemId))) continue;
+    // 既に導入した語だけ。キューに無いものは触らない。
+    const entry = await reviewQueue.findEntry(tx, learnerId, itemId);
+    if (entry === undefined) continue;
+    await applyReview(
+      tx,
+      learnerId,
+      itemId,
+      { kind: 'SPONTANEOUS' },
+      now,
+      requestRetention,
+      keyOf(itemId),
+    );
+    recorded.push(itemId);
+  }
+  return recorded;
 }

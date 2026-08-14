@@ -65,6 +65,8 @@ export interface OrchestratorDeps {
   resolveLevel?: (learnerId: string) => Promise<LearnerLevel | undefined>;
   /** 形態素解析による裏取り（§8）。無ければ模型の判定だけを使う。 */
   grammarCheck?: TextTurnDeps['grammarCheck'];
+  /** 会話で使えた既習語を FSRS に戻す（§3.2）。無ければ回流しない。 */
+  reflowVocabulary?: TextTurnDeps['reflowVocabulary'];
 }
 
 interface IncomingMessageBase {
@@ -312,10 +314,14 @@ export async function handleIncomingMessage(
       ...(deps.grammarCheck !== undefined
         ? { grammarCheck: deps.grammarCheck }
         : {}),
+      ...(deps.reflowVocabulary !== undefined
+        ? { reflowVocabulary: deps.reflowVocabulary }
+        : {}),
     },
     {
       sessionId: session.id,
       telegramMessageId: input.telegramMessageId,
+      learnerId: session.learnerId,
       text,
       modePolicy: policy,
       ...(hintLevel !== undefined ? { hintLevel } : {}),

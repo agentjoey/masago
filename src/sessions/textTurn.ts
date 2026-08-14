@@ -30,11 +30,24 @@ export interface TextTurnDeps {
       explanation: string;
     }[]
   >;
+  /**
+   * 会話で使えた既習語を FSRS に戻す（§3.2）。
+   *
+   * 返事を送った**後**の記録にだけ効かせる。ここで失敗しても会話は
+   * 続く——語彙の記録が取れないことと、返事が返らないことは別の重さ。
+   */
+  reflowVocabulary?: (
+    learnerId: string,
+    text: string,
+    detected: readonly { original: string }[],
+  ) => Promise<void>;
 }
 
 export interface TextTurnInput {
   sessionId: string;
   telegramMessageId: number;
+  /** 語彙の回流に要る。渡されなければ回流は行わない。 */
+  learnerId?: string;
   text: string;
   explicitRequest?: boolean;
   sessionEnding?: boolean;
@@ -74,6 +87,8 @@ export async function runTextTurn(
   });
 
   let reply: string;
+  // 誤りとして指摘された断片。回流でこれに触れる語を外すのに使う。
+  let allDetected: readonly { original: string }[] = [];
   if (deps.tutor !== undefined && deps.corrections !== undefined) {
     const retryHooks = asRetryTurnHooks(deps.corrections);
     const retryPreparation = retryHooks
@@ -178,6 +193,9 @@ export async function runTextTurn(
           keys: extra.map((issue) => issue.knowledgeKey),
         });
       }
+      allDetected = [...detected, ...extra];
+    } else {
+      allDetected = response.detectedIssues ?? [];
     }
   } else {
     reply = `echo: ${input.text}`;
@@ -186,5 +204,18 @@ export async function runTextTurn(
   await turnsRepo.updateStatus(deps.executor, turn.id, 'COMPLETED', {
     replyText: reply,
   });
+
+  // 語彙の回流は最後に。ここで転んでもターンは既に成立している。
+  if (deps.reflowVocabulary !== undefined && input.learnerId !== undefined) {
+    try {
+      await deps.reflowVocabulary(input.learnerId, input.text, allDetected);
+    } catch (error) {
+      deps.logger?.warn('could not record spontaneous vocabulary use', {
+        turnId: turn.id,
+        error,
+      });
+    }
+  }
+
   return { turnId: turn.id, reply };
 }

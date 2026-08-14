@@ -23,6 +23,7 @@ import { ensureParticlesSeeded } from './learning/particleSeed.js';
 import * as ttsCacheRepo from './db/repositories/ttsCache.js';
 import { speak } from './speech/voiceCache.js';
 import { collectReminderFacts } from './learning/reminderFacts.js';
+import { reflowVocabulary } from './learning/vocabReflow.js';
 import { createDailyReminder } from './scheduler/index.js';
 import {
   localDateKey,
@@ -167,6 +168,36 @@ const orchestratorDeps = {
       recommended: issue.recommended,
       explanation: issue.explanation,
     }));
+  },
+  /**
+   * 会話で使えた既習語を FSRS に戻す（§3.2）。
+   *
+   * 返事を送った後の後処理で、失敗しても会話は止めない。
+   * 一日一回に畳むので、同じ語を連呼しても間隔は伸びない。
+   */
+  reflowVocabulary: async (
+    learnerId: string,
+    text: string,
+    detected: readonly { original: string }[],
+  ) => {
+    const result = await reflowVocabulary(
+      {
+        executor: db,
+        analyze: (input: string) => analyzer.tokenize(input),
+        requestRetention: config.review.requestRetention,
+        dayKey: (now: Date) => localDateKey(now, config.session.userTimezone),
+      },
+      learnerId,
+      text,
+      new Date(),
+      detected,
+    );
+    if (result.recorded.length > 0) {
+      logger.info('recorded spontaneous vocabulary use', {
+        learnerId,
+        words: result.recorded,
+      });
+    }
   },
   resolveLevel: async (learnerId: string) => {
     const keys = await reviewQueueRepo.listIntroducedKeys(db, learnerId, 'KANA');

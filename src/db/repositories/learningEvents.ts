@@ -86,3 +86,22 @@ export async function countIntroducedSince(
     );
   return rows[0]?.count ?? 0;
 }
+
+/**
+ * 既に記録済みの dedupe 鍵を返す。
+ *
+ * `insertMany` は衝突を黙って捨てるので、事件の重複は防げる。だが
+ * 復習キューのほうは呼んだ分だけ進んでしまうので、**書く前に**
+ * 知る必要がある——会話で同じ語を五回使っても、証拠は一つ。
+ */
+export async function existingDedupeKeys(
+  tx: Executor,
+  keys: readonly string[],
+): Promise<Set<string>> {
+  if (keys.length === 0) return new Set();
+  const rows = await tx
+    .select({ dedupeKey: learningEvents.dedupeKey })
+    .from(learningEvents)
+    .where(inArray(learningEvents.dedupeKey, [...keys]));
+  return new Set(rows.map((row) => row.dedupeKey));
+}

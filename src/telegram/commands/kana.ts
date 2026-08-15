@@ -41,32 +41,99 @@ function keyboardOf(reply: KanaReply): InlineKeyboard | undefined {
   return keyboard;
 }
 
+/**
+ * Telegram のメディア説明文の上限。超える本文は吹き出しに載せられない
+ * ので、その時だけ文字と音を分けて出す。
+ */
+const CAPTION_LIMIT = 1024;
+
+/** 音声に載せる付随情報（説明文とボタン）。 */
+type Caption = Record<string, unknown>;
+
+/**
+ * 合成音を送る。**送れたら true**——呼び出し側は、false のときだけ
+ * 文字を別の吹き出しで出し直す。
+ */
 async function sendSpoken(
   ctx: AppContext,
   text: string,
   deps: KanaHandlerDeps,
-): Promise<void> {
-  if (deps.speak === undefined) return;
+  caption: Caption,
+): Promise<boolean> {
+  if (deps.speak === undefined) return false;
   try {
     const spoken = await deps.speak(text);
     if (spoken.fileId !== undefined) {
       // 送信済みの音声。合成もアップロードもしない。
-      await ctx.replyWithVoice(spoken.fileId);
-      return;
+      await ctx.replyWithVoice(spoken.fileId, caption);
+      return true;
     }
-    if (spoken.bytes === undefined) return;
-    const sent = await ctx.replyWithVoice(new InputFile(spoken.bytes));
+    if (spoken.bytes === undefined) return false;
+    const sent = await ctx.replyWithVoice(new InputFile(spoken.bytes), caption);
     const fileId = sent.voice?.file_id;
     if (fileId !== undefined) {
       await deps.rememberVoice?.(text, fileId);
     }
+    return true;
   } catch (error) {
-    // 音が出せなくても学習は続く。文字は既に送ってある。
     ctx.logger.warn('could not speak text', { text, error });
+    return false;
   }
 }
 
-async function send(
+/** 事前生成した仮名の音。送れたら true。 */
+async function sendKanaAudio(
+  ctx: AppContext,
+  kanaId: string,
+  audioDir: string,
+  ctxLogger: AppContext['logger'],
+  caption: Caption,
+): Promise<boolean> {
+  const fileName = kanaAudioFileName(kanaId);
+  if (fileName === undefined) return false;
+  const path = join(audioDir, fileName);
+  if (!existsSync(path)) {
+    ctxLogger.warn('kana audio missing', { kanaId, path });
+    return false;
+  }
+  // 音库は mp3。sendVoice は元々 OGG/opus 専用で、mp3 を受けるように
+  // なったのは後から——実機で確かめるまで通る保証は無い。
+  // 発音を聞かせることがこの機能の目的なので、形式で落ちるくらいなら
+  // 見た目が音楽プレイヤーになっても音を届ける。
+  try {
+    await ctx.replyWithVoice(new InputFile(path), caption);
+    return true;
+  } catch (error) {
+    ctxLogger.warn('sendVoice rejected the file, falling back to audio', {
+      kanaId,
+      error,
+    });
+    try {
+      await ctx.replyWithAudio(new InputFile(path), caption);
+      return true;
+    } catch (fallbackError) {
+      ctxLogger.warn('sendAudio also rejected the file', {
+        kanaId,
+        error: fallbackError,
+      });
+      return false;
+    }
+  }
+}
+
+/**
+ * 一つの返事は**一つの吹き出し**にする。
+ *
+ * 音のある返事は、本文をその説明文に、ボタンをその吹き出しに載せる。
+ * 字と音が別々の吹き出しに割れていると、読み方を確かめるのに二つを
+ * 往復することになるし、履歴も倍の長さになる。
+ *
+ * **文字は何があっても届ける。** 元々は「先に文字、後から音」にして
+ * 音の失敗から本文を守っていた。順序が逆になったぶん、音が送れなかった
+ * ときは文字だけを出し直す——ここを外すと、音库の欠けや形式の相性で
+ * 講評ごと消える。
+ */
+export async function send(
   ctx: AppContext,
   replies: readonly KanaReply[],
   deps: KanaHandlerDeps,
@@ -83,32 +150,37 @@ async function send(
         : reply.expectsReply === true
           ? { reply_markup: { force_reply: true as const } }
           : {};
-    await ctx.reply(reply.text, markup);
 
-    if (reply.speakText !== undefined) {
-      await sendSpoken(ctx, reply.speakText, deps);
+    const fits = reply.text.length <= CAPTION_LIMIT;
+    const caption: Caption = fits
+      ? { caption: reply.text, ...markup }
+      : { ...markup };
+
+    let delivered = false;
+    if (fits) {
+      if (reply.speakText !== undefined) {
+        delivered = await sendSpoken(ctx, reply.speakText, deps, caption);
+      } else if (reply.audioKanaId !== undefined) {
+        delivered = await sendKanaAudio(
+          ctx,
+          reply.audioKanaId,
+          audioDir,
+          ctx.logger,
+          caption,
+        );
+      }
     }
-    if (reply.audioKanaId === undefined) continue;
-    const fileName = kanaAudioFileName(reply.audioKanaId);
-    if (fileName === undefined) continue;
-    const path = join(audioDir, fileName);
-    // 音库が欠けていても学習は続けられる。文字は既に送ってある。
-    if (!existsSync(path)) {
-      ctx.logger.warn('kana audio missing', { kanaId: reply.audioKanaId, path });
-      continue;
-    }
-    // 音库は mp3。sendVoice は元々 OGG/opus 専用で、mp3 を受けるように
-    // なったのは後から——実機で確かめるまで通る保証は無い。
-    // 発音を聞かせることがこの機能の目的なので、形式で落ちるくらいなら
-    // 見た目が音楽プレイヤーになっても音を届ける。
-    try {
-      await ctx.replyWithVoice(new InputFile(path));
-    } catch (error) {
-      ctx.logger.warn('sendVoice rejected the file, falling back to audio', {
-        kanaId: reply.audioKanaId,
-        error,
-      });
-      await ctx.replyWithAudio(new InputFile(path));
+    if (delivered) continue;
+
+    await ctx.reply(reply.text, markup);
+    // 説明文に載せられない長さだったときだけ、音を別の吹き出しで足す。
+    // 音の送信に失敗していた場合はここには来ない（もう諦めている）。
+    if (!fits) {
+      if (reply.speakText !== undefined) {
+        await sendSpoken(ctx, reply.speakText, deps, {});
+      } else if (reply.audioKanaId !== undefined) {
+        await sendKanaAudio(ctx, reply.audioKanaId, audioDir, ctx.logger, {});
+      }
     }
   }
 }

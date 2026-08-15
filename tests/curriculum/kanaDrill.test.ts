@@ -203,6 +203,68 @@ describe('render', () => {
     expect(renderCorrect(kana('ki'), 'hiragana')).toContain('き');
   });
 
+  /**
+   * 一日ぶんを終えた日の `/today`。
+   *
+   * 「今天没有到期的内容」と出して入口も /review だけにしていたので、
+   * **まだ 94 字残っているのに今日はもう終わりに見えた**。一日の数は
+   * 計画であって上限ではない——続けられることを言い、入口も出す。
+   */
+  it('says the day’s plan is done, not that there is nothing left', () => {
+    const text = renderDaily({
+      stage: 'S0_KANA_ONLY',
+      newKana: [],
+      kanaDue: 0,
+      newWords: [],
+      vocabDue: 0,
+      newParticles: [],
+      grammarDue: 0,
+      heldBack: false,
+      kanaProgress: { introduced: 10, total: 104 },
+      vocabProgress: { introduced: 0, total: 1301 },
+      grammarProgress: { introduced: 0, total: 12 },
+    });
+    expect(text).not.toContain('今天没有到期的内容');
+    expect(text).toContain('/kana');
+  });
+
+  // 本当に全部終わっているときまで「続けられる」と言ってはいけない。
+  it('does not promise more when everything really is learned', () => {
+    const text = renderDaily({
+      stage: 'S0_KANA_ONLY',
+      newKana: [],
+      kanaDue: 0,
+      newWords: [],
+      vocabDue: 0,
+      newParticles: [],
+      grammarDue: 0,
+      heldBack: false,
+      kanaProgress: { introduced: 104, total: 104 },
+      vocabProgress: { introduced: 1301, total: 1301 },
+      grammarProgress: { introduced: 12, total: 12 },
+    });
+    expect(text).toContain('今天没有到期的内容');
+  });
+
+  // 積み残しの保護は硬いまま。ここで「続けよう」と誘ってはいけない。
+  it('still tells the learner to catch up when the backlog is holding new items', () => {
+    const text = renderDaily({
+      stage: 'S0_KANA_ONLY',
+      newKana: [],
+      kanaDue: 0,
+      newWords: [],
+      vocabDue: 0,
+      newParticles: [],
+      grammarDue: 0,
+      heldBack: true,
+      kanaProgress: { introduced: 10, total: 104 },
+      vocabProgress: { introduced: 0, total: 1301 },
+      grammarProgress: { introduced: 0, total: 12 },
+    });
+    expect(text).toContain('积压');
+    expect(text).not.toContain('计划做完');
+  });
+
   it('renders a progress bar of fixed width', () => {
     for (const introduced of [0, 1, 52, 103, 104]) {
       const text = renderProgress({
@@ -514,8 +576,15 @@ describe('renderDaily', () => {
     expect(text).toContain('大学(だいがく)');
   });
 
-  it('says so when there is genuinely nothing to do', () => {
-    expect(renderDaily(base)).toContain('今天没有到期的内容');
+  /**
+   * この夹具は 46/104——**まだ 58 字残っている**。ここで
+   * 「今天没有到期的内容」と出していたので、一日ぶんを終えただけで
+   * 今日はもう終わりに見えた。残りがあるなら、そう言う。
+   */
+  it('says the plan is done while there is still material left', () => {
+    const text = renderDaily(base);
+    expect(text).toContain('计划做完');
+    expect(text).not.toContain('今天没有到期的内容');
   });
 
   it('explains a hold-back instead of looking empty', () => {

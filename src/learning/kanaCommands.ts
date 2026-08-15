@@ -470,9 +470,13 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
 
+      // 練習の求めには一日の上限を掛けない。`/kana` を叩くこと自体が
+      // 「続けたい」の表明なので、その都度**次の一組**を出す（利用者の
+      // 判断で改めた）。一日の数は /today と MCP の get_today が述べる
+      // 「計画」に残る。積み残しの保護（backlogThreshold）は硬いまま。
       const lesson = await planKanaLesson(executor, learnerId, now, {
         ...lessonOptions,
-        newPerDay: await remainingNewToday(learnerId, now, 'KANA'),
+        newPerDay: deps.newPerDay,
       });
 
       const replies: KanaReply[] = [];
@@ -776,9 +780,10 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
+      // 練習の求めには上限を掛けない（/kana と同じ判断）。
       const lesson = await planVocabSession(executor, learnerId, now, {
         ...lessonOptions,
-        newPerDay: await remainingNewToday(learnerId, now, 'VOCABULARY'),
+        newPerDay: deps.newPerDay,
       });
 
       if (lesson.stage === 'S0_KANA_ONLY') {
@@ -826,11 +831,9 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
         ];
       }
 
-      // 助詞にも一日の新出上限を効かせる。効かせないと /write を三回
-      // 叩くだけで 12 項が一日で入る——仮名で直した取りこぼし（§2.5）と
-      // 同じ形が、新しい型でそのまま再発していた。
+      // 練習の求めには上限を掛けない（/kana と同じ判断）。
       const lesson = await planWritingSession(executor, learnerId, now, {
-        newPerDay: await remainingNewToday(learnerId, now, 'GRAMMAR'),
+        newPerDay: deps.newPerDay,
         maxReviews: deps.maxReviews,
       });
 

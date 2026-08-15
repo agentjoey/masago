@@ -318,8 +318,21 @@ export function renderDaily(summary: DailySummary): string {
     summary.kanaDue === 0 &&
     summary.vocabDue === 0 &&
     summary.grammarDue === 0;
+  // 一日の数は**計画**であって練習の上限ではない。今日のぶんを終えた日に
+  // 「今天没有到期的内容」とだけ出して入口も /review しか出していなかった
+  // ので、まだ 94 字残っていても今日はもう終わりに見えていた。
+  const moreToLearn =
+    summary.kanaProgress.introduced < summary.kanaProgress.total ||
+    summary.vocabProgress.introduced < summary.vocabProgress.total;
+  const planDone = nothingToDo && !summary.heldBack && moreToLearn;
   if (nothingToDo) {
-    lines.push(summary.heldBack ? '复习积压较多，先追平。' : '今天没有到期的内容。');
+    lines.push(
+      summary.heldBack
+        ? '复习积压较多，先追平。'
+        : planDone
+          ? '今天的计划做完了。想继续就直接往下学。'
+          : '今天没有到期的内容。',
+    );
   }
 
   lines.push('');
@@ -339,10 +352,20 @@ export function renderDaily(summary: DailySummary): string {
   // 案内は「今日やることがある入口」だけ出す。全部並べると
   // どれを押せばいいのか分からない。
   const entries: string[] = [];
-  if (summary.newKana.length > 0 || summary.kanaDue > 0) {
+  // 計画を終えた日は、まだ材料が残っている線の入口を出す。案内が
+  // /review だけだと「続けられる」と書いておいて押す所が無い。
+  const kanaLeft =
+    summary.kanaProgress.introduced < summary.kanaProgress.total;
+  const vocabLeft =
+    summary.vocabProgress.introduced < summary.vocabProgress.total;
+  if (summary.newKana.length > 0 || summary.kanaDue > 0 || (planDone && kanaLeft)) {
     entries.push('/kana 练假名');
   }
-  if (summary.newWords.length > 0 || summary.vocabDue > 0) {
+  if (
+    summary.newWords.length > 0 ||
+    summary.vocabDue > 0 ||
+    (planDone && !kanaLeft && vocabLeft)
+  ) {
     entries.push('/vocab 练单词');
   }
   if (summary.newParticles.length > 0 || summary.grammarDue > 0) {

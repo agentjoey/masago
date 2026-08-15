@@ -510,9 +510,16 @@ describe.skipIf(!HAS_DB)('/start', () => {
 });
 
 describe.skipIf(!HAS_DB)('daily new-item cap', () => {
-  // newPerDay は「一回で出す数」ではなく「その日に出した総数」。
-  // 実測で /kana を 5 回叩くと 25 個入り、翌日以降の復習が雪だるまになった。
-  it('caps introductions per day, not per call', { timeout: 180000 }, async () => {
+  /**
+   * 一日の数は**計画**であって、練習の上限ではない（利用者の判断で改めた）。
+   *
+   * `/kana` `/vocab` `/write` は自分から叩いた時点で「続けたい」の
+   * 表明なので、何度でも次の一組を出す。`/today` と MCP の get_today は
+   * その日の計画を述べる場所なので、従来どおり一日ぶんで数える。
+   *
+   * 積み残しの保護（backlogThreshold）はそのまま硬い闸として残る。
+   */
+  it('keeps handing out new items when the learner asks again', { timeout: 180000 }, async () => {
     const { db, schema, kanaCommands } = need();
     const userId = 9_910_000_000 + (RUN % 100_000);
     const [learner] = await db
@@ -521,7 +528,7 @@ describe.skipIf(!HAS_DB)('daily new-item cap', () => {
       .returning();
     if (!learner) throw new Error('failed to create learner');
 
-    let localClock = new Date('2027-10-01T09:00:00Z');
+    const localClock = new Date('2027-10-01T09:00:00Z');
     const dayStart = (now: Date): Date => {
       const day = new Date(now);
       day.setUTCHours(0, 0, 0, 0);
@@ -550,20 +557,23 @@ describe.skipIf(!HAS_DB)('daily new-item cap', () => {
     };
 
     try {
-      for (let call = 0; call < 4; call += 1) {
-        await commands.drill(userId);
-      }
+      // 一回目で一組。叩くたびに次の一組が出る——「今日はここまで」で
+      // 止めない。
+      await commands.drill(userId);
       expect(await introduced()).toBe(5);
-
-      // 翌日はまた 5 個ぶんの枠が戻る
-      localClock = new Date('2027-10-02T09:00:00Z');
       await commands.drill(userId);
       expect(await introduced()).toBe(10);
-
-      // /today も残り枠を反映する（枠を使い切った日は新出を出さない）
       await commands.drill(userId);
+      expect(await introduced()).toBe(15);
+
+      // 一方 /today はその日の計画を述べる場所。今日のぶんは済んでいるので
+      // 新出は挙げないが、**続けられることは言う**——ここで黙ると
+      // 「今日はもう何も無い」と読める。
       const today = await commands.today(userId);
-      expect(today[0]?.text).not.toContain('新假名 5 个');
+      const text = today[0]?.text ?? '';
+      expect(text).not.toContain('新假名 5 个');
+      expect(text).toContain('/kana');
+      expect(text).not.toContain('今天没有到期的内容');
     } finally {
       await db
         .delete(schema.learningEvents)

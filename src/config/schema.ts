@@ -98,6 +98,8 @@ const envSchema = z.object({
   KANA_NEW_PER_DAY: z.coerce.number().int().min(0).max(20).default(5),
   KANA_MAX_REVIEWS: z.coerce.number().int().min(1).default(20),
   KANA_BACKLOG_THRESHOLD: z.coerce.number().int().min(1).default(20),
+  /** 一輪で出す問題数。答えた後の自動継続だけを締める。 */
+  KANA_ROUND_SIZE: z.coerce.number().int().min(1).max(100).default(10),
 
   // Review scheduling (FSRS)
   // 目標保持率。0.9 なら復習時点で 90% 思い出せる想定で間隔を引く。
@@ -188,6 +190,7 @@ export const configSchema = envSchema.transform((env) => ({
     newPerDay: env.KANA_NEW_PER_DAY,
     maxReviews: env.KANA_MAX_REVIEWS,
     backlogThreshold: env.KANA_BACKLOG_THRESHOLD,
+    roundSize: env.KANA_ROUND_SIZE,
   },
   session: {
     userTimezone: env.USER_TIMEZONE,

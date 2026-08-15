@@ -37,6 +37,7 @@ import type { Random } from '../curriculum/quiz.js';
 import { vocabOfKey } from '../curriculum/vocab.js';
 import type { Executor } from '../db/repositories/executor.js';
 import * as learnerProfiles from '../db/repositories/learnerProfiles.js';
+import * as learningEventsRepo from '../db/repositories/learningEvents.js';
 import * as reviewQueue from '../db/repositories/reviewQueue.js';
 import {
   decodeAnswer,
@@ -174,6 +175,16 @@ export interface KanaCommandDeps {
   readonly newPerDay: number;
   readonly maxReviews: number;
   readonly backlogThreshold: number;
+  /**
+   * 一輪で出す問題数。答えた後の自動継続だけを締める（既定 10）。
+   *
+   * `maxReviews` は /today の計画と積み残しの判断に使う数で、出題の
+   * 流れには効いていなかった——期限の来た分が尽きるまで止まらず、
+   * 20 問を切れ目なく出していた。別の数として持つのは、`maxReviews` が
+   * 分野別語彙の積み残し闸も兼ねているため（そちらを 10 に下げると
+   * /domain が早々に新出を止める）。
+   */
+  readonly roundSize?: number;
   /**
    * 学習者の地域時間での「その日の 0 時」。一日の新出上限を数えるのに要る。
    * 省略すると上限は一回あたりの数として働く（従来の挙動）。
@@ -389,6 +400,32 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
   }
 
   /** 次の一問。無ければ締めの一言。 */
+  /**
+   * 答えたあとの続き。一輪ぶん答えていたら締める。
+   *
+   * 「この一輪」は**直近 30 分の作答数**で数える。会話の状態を持たない
+   * ので再起動しても狂わず、間を空けて戻ってくれば自然に次の輪になる。
+   * ついでに「共 N 题」の N を本物にする——従来は続きの呼び出しに
+   * 字面の `1` を渡していて、常に「共 1 题」と出ていた。
+   */
+  const ROUND_WINDOW_MS = 30 * 60 * 1000;
+  async function continueRound(
+    learnerId: string,
+    now: Date,
+    ask: (answered: number) => Promise<KanaReply[]>,
+  ): Promise<KanaReply[]> {
+    const stamps = await learningEventsRepo.answerTimestampsSince(
+      executor,
+      learnerId,
+      new Date(now.getTime() - ROUND_WINDOW_MS),
+    );
+    const answered = stamps.length;
+    if (answered >= (deps.roundSize ?? 10)) {
+      return [{ text: renderDrillFinished(answered) }];
+    }
+    return ask(answered);
+  }
+
   async function askNext(
     learnerId: string,
     now: Date,
@@ -595,7 +632,9 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
             };
         return [
           feedback,
-          ...(await askNextDomain(learnerId, graded.target.domain, now, 1)),
+          ...(await continueRound(learnerId, now, (n) =>
+            askNextDomain(learnerId, graded.target.domain, now, n),
+          )),
         ];
       }
 
@@ -620,7 +659,12 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
               ),
               speakText: graded.target.text,
             };
-        return [feedback, ...(await askNextReading(learnerId, 1))];
+        return [
+          feedback,
+          ...(await continueRound(learnerId, now, (n) =>
+            askNextReading(learnerId, n),
+          )),
+        ];
       }
 
       // 助詞の回答。仮名・単語とは別の接頭辞で先に分ける。
@@ -652,7 +696,12 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
               ),
               speakText: graded.full,
             };
-        return [feedback, ...(await askNextWriting(learnerId, now, 1))];
+        return [
+          feedback,
+          ...(await continueRound(learnerId, now, (n) =>
+            askNextWriting(learnerId, now, n),
+          )),
+        ];
       }
 
       // 単語の回答は別の接頭辞。仮名として採点しないよう先に分ける。
@@ -675,7 +724,9 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
             };
         return [
           vocabFeedback,
-          ...(await askNextVocab(learnerId, now, 1)),
+          ...(await continueRound(learnerId, now, (n) =>
+            askNextVocab(learnerId, now, n),
+          )),
         ];
       }
 
@@ -709,7 +760,12 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
             audioKanaId: graded.target.id,
           };
 
-      return [feedback, ...(await askNext(learnerId, now, 1))];
+      return [
+        feedback,
+        ...(await continueRound(learnerId, now, (n) =>
+          askNext(learnerId, now, n),
+        )),
+      ];
     },
 
     async cost() {
@@ -1017,7 +1073,9 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
             text: renderWordOrderResult(result.verdict, result.full, typed),
             speakText: result.full,
           },
-          ...(await askNextWriting(learnerId, now, 1)),
+          ...(await continueRound(learnerId, now, (n) =>
+            askNextWriting(learnerId, now, n),
+          )),
         ];
       }
 
@@ -1037,7 +1095,12 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
               text: renderVocabWrong(gradedVocab.target, undefined, typed),
               speakText: gradedVocab.target.reading,
             };
-        return [feedbackVocab, ...(await askNextVocab(learnerId, now, 1))];
+        return [
+          feedbackVocab,
+          ...(await continueRound(learnerId, now, (n) =>
+            askNextVocab(learnerId, now, n),
+          )),
+        ];
       }
       if (targetId === undefined) return undefined;
       const graded = await gradeTypedAndRecord(
@@ -1058,7 +1121,12 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
             audioKanaId: graded.target.id,
           };
 
-      return [feedback, ...(await askNext(learnerId, now, 1))];
+      return [
+        feedback,
+        ...(await continueRound(learnerId, now, (n) =>
+          askNext(learnerId, now, n),
+        )),
+      ];
     },
   };
 }

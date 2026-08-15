@@ -587,3 +587,79 @@ describe.skipIf(!HAS_DB)('daily new-item cap', () => {
     }
   });
 });
+
+describe.skipIf(!HAS_DB)('一轮的长度', () => {
+  /**
+   * 20 問を切れ目なく出していた。答えると次が来る作りで、**期限の来た分が
+   * 尽きるまで止まらない**——`KANA_MAX_REVIEWS` は /today の計画と積み残しの
+   * 判断にしか効いておらず、出題の流れは素通しだった。
+   *
+   * 自分から `/kana` `/review` と叩いた時は続ける（それ自体が「やりたい」の
+   * 表明）。締めるのは**答えた後の自動継続**だけ。
+   */
+  it('closes the round after roundSize answers, but not on an explicit command', {
+    timeout: 180000,
+  }, async () => {
+    const { db, schema, kanaCommands } = need();
+    const userId = 9_930_000_000 + (RUN % 100_000);
+    const [learner] = await db
+      .insert(schema.learnerProfiles)
+      .values({ telegramUserId: userId })
+      .returning();
+    if (!learner) throw new Error('failed to create learner');
+
+    const clock = new Date('2027-11-01T09:00:00Z');
+    const commands = kanaCommands.createKanaCommands({
+      executor: db,
+      now: () => clock,
+      random: seeded(11),
+      requestRetention: 0.9,
+      optionCount: 4,
+      newPerDay: 5,
+      maxReviews: 20,
+      backlogThreshold: 20,
+      roundSize: 3, // 短くして回す
+      dailyLimitUsd: 1,
+      monthlyLimitUsd: 10,
+    });
+
+    const answerOne = async (): Promise<string> => {
+      const replies = await commands.review(userId);
+      const q = replies.find((r) => r.buttons !== undefined);
+      if (q?.buttons === undefined) return replies[0]?.text ?? '';
+      const targetId = decodeAnswer(q.buttons[0]?.data ?? '')?.targetId;
+      const correct = q.buttons.find(
+        (b) => decodeAnswer(b.data)?.chosenId === targetId,
+      );
+      if (correct === undefined) throw new Error('no correct option');
+      const out = await commands.answer(userId, correct.data, clock);
+      return out.map((r) => r.text).join('\n');
+    };
+
+    try {
+      await commands.drill(userId); // 5 つ導入
+      let closed = '';
+      for (let i = 0; i < 6 && closed === ''; i += 1) {
+        const text = await answerOne();
+        if (text.includes('本轮完成')) closed = text;
+      }
+      // 3 問で締まる。数字も本物（従来は常に「共 1 题」だった）
+      expect(closed).toContain('本轮完成');
+      expect(closed).not.toContain('共 1 题');
+
+      // 自分から叩いた時は締めない——次の問題が出る
+      const again = await commands.review(userId);
+      expect(again.some((r) => r.buttons !== undefined)).toBe(true);
+    } finally {
+      await db
+        .delete(schema.learningEvents)
+        .where(eq(schema.learningEvents.learnerId, learner.id));
+      await db
+        .delete(schema.reviewQueue)
+        .where(eq(schema.reviewQueue.learnerId, learner.id));
+      await db
+        .delete(schema.learnerProfiles)
+        .where(eq(schema.learnerProfiles.id, learner.id));
+    }
+  });
+});

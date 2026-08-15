@@ -91,7 +91,16 @@ export async function listDue(
         type === undefined ? undefined : eq(knowledgeItems.type, type),
       ),
     )
-    .orderBy(asc(reviewQueue.nextReviewAt))
+    // まだ一度も答えていない項目を先に出す。
+    //
+    // 期日順だけだと、導入したての項目は `nextReviewAt = now` なので
+    // **必ず最後尾**に回る。「な行を五つ教えた直後に た を訊く」が
+    // 実際に起きていた——目の前で見せた字をその場で確かめられないなら、
+    // 教えた意味が薄い。答えて reps が 1 になれば、あとは期日順に戻る。
+    .orderBy(
+      asc(sql`case when ${reviewQueue.reps} = 0 then 0 else 1 end`),
+      asc(reviewQueue.nextReviewAt),
+    )
     .limit(limit);
 
   return rows.map((row) => ({

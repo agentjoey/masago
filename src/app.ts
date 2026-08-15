@@ -359,6 +359,7 @@ const kanaCommands = createKanaCommands({
   newPerDay: config.kana.newPerDay,
   maxReviews: config.kana.maxReviews,
   backlogThreshold: config.kana.backlogThreshold,
+  roundSize: config.kana.roundSize,
   // 学習者の地域時間の 0 時。一日の新出上限をここで区切る。
   dayStart: learnerDayStart,
   /**

@@ -1,4 +1,4 @@
-import { desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 try {
@@ -261,6 +261,55 @@ describe.skipIf(!HAS_DB)('reviewQueue repository', () => {
       expect(await repo.listDue(db, created.learnerId, past, 50)).toEqual([]);
 
       expect(await repo.countDue(db, created.otherLearnerId, far)).toBe(1);
+    },
+  );
+
+  /**
+   * 教えたばかりの字を先に訊く。
+   *
+   * 期日順だけで並べると、新出は `nextReviewAt = now` なので**必ず最後尾**に
+   * 回る。実際に「な行を五つ教えた直後に た を訊く」が起きていた——
+   * 目の前で見せた字をその場で確かめられないと、教えた意味が薄い。
+   *
+   * 判定は「まだ一度も答えていない」（reps = 0）。会話の状態を持たずに
+   * 済むので、再起動や日をまたいでも同じように働く。
+   */
+  it(
+    'asks never-answered items before overdue reviews',
+    { timeout: 60000 },
+    async () => {
+      const { db, repo, service, schema } = need();
+      const [answeredItem, freshItem] = created.itemIds;
+      if (answeredItem === undefined || freshItem === undefined) {
+        throw new Error('missing items');
+      }
+
+      // 片方は答え済みにして、期日をうんと過去に倒す（＝最も延滞している）
+      await service.enqueueNew(db, created.learnerId, [answeredItem], NOW);
+      await service.applyReview(
+        db,
+        created.learnerId,
+        answeredItem,
+        { kind: 'CORRECT', hinted: false, inputMode: 'ROMAJI' },
+        NOW,
+        RETENTION,
+      );
+      await db
+        .update(schema.reviewQueue)
+        .set({ nextReviewAt: new Date(NOW.getTime() - 30 * 24 * 3600 * 1000) })
+        .where(
+          and(
+            eq(schema.reviewQueue.learnerId, created.learnerId),
+            eq(schema.reviewQueue.knowledgeItemId, answeredItem),
+          ),
+        );
+
+      // もう片方は今しがた導入したばかり（reps = 0、期日は now）
+      await service.enqueueNew(db, created.learnerId, [freshItem], NOW);
+
+      const due = await repo.listDue(db, created.learnerId, NOW, 50);
+      const order = due.map((d) => d.entry.knowledgeItemId);
+      expect(order.indexOf(freshItem)).toBeLessThan(order.indexOf(answeredItem));
     },
   );
 

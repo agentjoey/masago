@@ -65,6 +65,7 @@ function makeConfig(overrides?: {
       newPerDay: 5,
       maxReviews: 20,
       backlogThreshold: 20,
+    roundSize: 10,
     },
     correction: {
       surfaceAfterTurnsConversation: 4,

@@ -41,3 +41,31 @@ export async function upsert(
   }
   return row;
 }
+
+/**
+ * 今の一輪の起点を打ち直す。`/kana` `/review` など、利用者が自分から
+ * 入ってきたところで呼ぶ。
+ */
+export async function startRound(
+  tx: Executor,
+  learnerId: string,
+  now: Date,
+): Promise<void> {
+  await tx
+    .update(learnerProfiles)
+    .set({ roundStartedAt: now })
+    .where(eq(learnerProfiles.id, learnerId));
+}
+
+/** 今の一輪の起点。まだ無ければ undefined（＝この呼び出しから数える）。 */
+export async function roundStartedAt(
+  tx: Executor,
+  learnerId: string,
+): Promise<Date | undefined> {
+  const [row] = await tx
+    .select({ at: learnerProfiles.roundStartedAt })
+    .from(learnerProfiles)
+    .where(eq(learnerProfiles.id, learnerId))
+    .limit(1);
+  return row?.at ?? undefined;
+}

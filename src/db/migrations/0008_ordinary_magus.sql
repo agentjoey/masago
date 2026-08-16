@@ -1,0 +1,1 @@
+ALTER TABLE "learner_profiles" ADD COLUMN "round_started_at" timestamp with time zone;

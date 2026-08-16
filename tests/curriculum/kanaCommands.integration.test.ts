@@ -608,7 +608,13 @@ describe.skipIf(!HAS_DB)('一轮的长度', () => {
       .returning();
     if (!learner) throw new Error('failed to create learner');
 
-    const clock = new Date('2027-11-01T09:00:00Z');
+    // 時計は進める。止めたままだと前の輪の作答と新しい輪の起点が同時刻に
+    // なり、境界の `>=` で拾われる——現実の操作では必ず時間が経つ。
+    let clock = new Date('2027-11-01T09:00:00Z');
+    const tick = (): Date => {
+      clock = new Date(clock.getTime() + 5_000);
+      return clock;
+    };
     const commands = kanaCommands.createKanaCommands({
       executor: db,
       now: () => clock,
@@ -623,33 +629,53 @@ describe.skipIf(!HAS_DB)('一轮的长度', () => {
       monthlyLimitUsd: 10,
     });
 
-    const answerOne = async (): Promise<string> => {
-      const replies = await commands.review(userId);
-      const q = replies.find((r) => r.buttons !== undefined);
-      if (q?.buttons === undefined) return replies[0]?.text ?? '';
+    /** 返信の中の問題に答え、**その返事**を返す（続きの一問はそこに入る）。 */
+    const answerThe = async (replies: { text: string; buttons?: readonly { label: string; data: string }[] }[]) => {
+      const q = [...replies].reverse().find((r) => r.buttons !== undefined);
+      if (q?.buttons === undefined) return undefined;
       const targetId = decodeAnswer(q.buttons[0]?.data ?? '')?.targetId;
       const correct = q.buttons.find(
         (b) => decodeAnswer(b.data)?.chosenId === targetId,
       );
       if (correct === undefined) throw new Error('no correct option');
-      const out = await commands.answer(userId, correct.data, clock);
-      return out.map((r) => r.text).join('\n');
+      const askedAt = clock;
+      tick(); // 答えるまでに時間が経つ
+      return commands.answer(userId, correct.data, askedAt);
+    };
+
+    /** 一つの入口から一輪を回しきり、何問で締まったかを返す。 */
+    const runRound = async (
+      enter: () => Promise<Awaited<ReturnType<typeof commands.review>>>,
+    ): Promise<number> => {
+      let replies = await enter();
+      for (let asked = 1; asked <= 20; asked += 1) {
+        const out = await answerThe(replies);
+        if (out === undefined) throw new Error('no question to answer');
+        if (out.some((r) => r.text.includes('本轮完成'))) return asked;
+        replies = out;
+      }
+      throw new Error('round never closed');
     };
 
     try {
-      await commands.drill(userId); // 5 つ導入
-      let closed = '';
-      for (let i = 0; i < 6 && closed === ''; i += 1) {
-        const text = await answerOne();
-        if (text.includes('本轮完成')) closed = text;
-      }
-      // 3 問で締まる。数字も本物（従来は常に「共 1 题」だった）
-      expect(closed).toContain('本轮完成');
-      expect(closed).not.toContain('共 1 题');
+      await commands.drill(userId); // 5 つ導入してそのまま一輪
+      const first = await runRound(() => commands.drill(userId));
+      expect(first).toBe(3); // roundSize = 3
 
-      // 自分から叩いた時は締めない——次の問題が出る
-      const again = await commands.review(userId);
-      expect(again.some((r) => r.buttons !== undefined)).toBe(true);
+      /**
+       * 一輪を終えた直後の復習が**毎回一問で切れる**不具合の回帰。
+       *
+       * 「この輪」を直近 30 分の作答数で数えていたので、一輪ぶん答えた
+       * あとは窓が満杯のまま——`/review` を叩くたびに一問だけ出して
+       * すぐ「本轮完成」に落ちていた（しかも「共 N 题」は窓の総数を
+       * 出すので、一問しか答えていないのに「共 13 题」と言った）。
+       *
+       * 輪の起点は**利用者が入ってきた時刻**であって、時間窓ではない。
+       */
+      const second = await runRound(() => commands.review(userId));
+      expect(second).toBe(3);
+      const third = await runRound(() => commands.review(userId));
+      expect(third).toBe(3);
     } finally {
       await db
         .delete(schema.learningEvents)

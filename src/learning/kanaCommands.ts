@@ -408,22 +408,34 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
    * ついでに「共 N 题」の N を本物にする——従来は続きの呼び出しに
    * 字面の `1` を渡していて、常に「共 1 题」と出ていた。
    */
-  const ROUND_WINDOW_MS = 30 * 60 * 1000;
   async function continueRound(
     learnerId: string,
     now: Date,
     ask: (answered: number) => Promise<KanaReply[]>,
   ): Promise<KanaReply[]> {
+    // 起点が無ければこの瞬間から数える（列を足す前からの学習者、または
+    // 出題を経ずに答えが飛んできた場合）。
+    const since = (await learnerProfiles.roundStartedAt(executor, learnerId)) ?? now;
+    // 起点と**同時刻**の作答は前の輪のもの。一輪を締めた直後に
+    // `/review` と叩くと、締めた一問と新しい輪の起点が同じ時刻になり、
+    // 数え直すと最初から一問ぶん進んでいることになる（実測）。
+    // `answerTimestampsSince` は境界を含む（活動集計では正しい）ので、
+    // ここで厳密に切る。
     const stamps = await learningEventsRepo.answerTimestampsSince(
       executor,
       learnerId,
-      new Date(now.getTime() - ROUND_WINDOW_MS),
+      since,
     );
-    const answered = stamps.length;
+    const answered = stamps.filter((at) => at.getTime() > since.getTime()).length;
     if (answered >= (deps.roundSize ?? 10)) {
       return [{ text: renderDrillFinished(answered) }];
     }
     return ask(answered);
+  }
+
+  /** 利用者が自分から練習に入ってきた。ここが一輪の起点。 */
+  async function beginRound(learnerId: string, now: Date): Promise<void> {
+    await learnerProfiles.startRound(executor, learnerId, now);
   }
 
   async function askNext(
@@ -506,6 +518,7 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
+      await beginRound(learnerId, now);
 
       // 練習の求めには一日の上限を掛けない。`/kana` を叩くこと自体が
       // 「続けたい」の表明なので、その都度**次の一組**を出す（利用者の
@@ -545,8 +558,10 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
     async review(telegramUserId) {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
+      const now = deps.now();
+      await beginRound(learnerId, now);
       // 新出は入れない。復習だけしたい日のための入り口。
-      return askNext(learnerId, deps.now(), 0);
+      return askNext(learnerId, now, 0);
     },
 
     async progress(telegramUserId) {
@@ -836,6 +851,7 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
+      await beginRound(learnerId, now);
       // 練習の求めには上限を掛けない（/kana と同じ判断）。
       const lesson = await planVocabSession(executor, learnerId, now, {
         ...lessonOptions,
@@ -875,6 +891,7 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
+      await beginRound(learnerId, now);
 
       // 語彙が始まっていない段階では文が読めない。助詞だけ先に覚えても
       // 入れる場所が分からず、記号の暗記にしかならない。
@@ -929,6 +946,7 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
+      await beginRound(learnerId, now);
       const vocab = await planVocabSession(executor, learnerId, now, lessonOptions);
       if (vocab.stage === 'S0_KANA_ONLY') {
         return [
@@ -944,6 +962,7 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
+      await beginRound(learnerId, now);
       const vocab = await planVocabSession(executor, learnerId, now, lessonOptions);
       if (vocab.stage === 'S0_KANA_ONLY') {
         return [
@@ -959,6 +978,7 @@ export function createKanaCommands(deps: KanaCommandDeps): KanaCommands {
       const learnerId = await learnerIdOf(telegramUserId);
       if (learnerId === undefined) return [{ text: NOT_REGISTERED }];
       const now = deps.now();
+      await beginRound(learnerId, now);
 
       // 引数無し＝一覧。どの分野をやるかは学習者が選ぶ——主線と違い、
       // ここに「次はこれ」という順序は無い。

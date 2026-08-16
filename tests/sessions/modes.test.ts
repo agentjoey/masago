@@ -16,6 +16,7 @@ function fakeProfile(levels: unknown = null): LearnerProfile {
     goals: null,
     preferences: null,
     profileSummary: null,
+  roundStartedAt: null,
     createdAt: new Date(0),
     updatedAt: new Date(0),
   };
